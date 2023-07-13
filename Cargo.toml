@@ -18,3 +18,8 @@ lazy_static = "1.4.0"
 uuid = "1.4.0"
 hashmap = "0.0.1"
 thiserror = "1.0.43"
+serde = { version = "1.0.171", features = ["derive"] }
+serde_json = "1.0.102"
+reqwest = "0.11.18"
+scraper = "0.17.1"
+selectors = "0.25.0"

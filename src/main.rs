@@ -1,28 +1,40 @@
 use core::panic;
-use std::{collections::HashMap, sync::Arc};
+use std::collections::HashMap;
 
-use chrono::{Datelike, Duration, Timelike, Weekday};
+use chrono::Timelike;
 
 use log::LevelFilter;
+
 use teloxide::{
-    dispatching::dialogue::GetChatId, prelude::*, types::ParseMode,
+    prelude::*,
     utils::command::BotCommands,
+    types::ParseMode
 };
 
-mod errors;
-use errors::TimeParseError;
+
+
+mod data_types;
+use data_types::TimeParseError;
+mod scraper;
 
 use rusqlite::{Connection, Result};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 use tokio_cron_scheduler::{Job, JobScheduler}; //, JobSchedulerError};
 
 #[macro_use]
 extern crate lazy_static;
 use regex::Regex;
 
+#[derive(Debug, Copy, Clone)]
+enum JobType {
+    Register,
+    Unregister,
+}
+
 // pretty lazy
 #[derive(Debug, Copy, Clone)]
 struct SendMsgJob {
+    job_type: JobType,
     chatid: i64,
     hour: u32,
     minute: u32,
@@ -44,7 +56,7 @@ async fn main() {
 
     let c_bot = bot.clone();
 
-    let job_uuids: Arc<RwLock<HashMap<i64, uuid::Uuid>>> = Arc::new(RwLock::new(HashMap::new())); //HashMap::new();
+    let job_uuids: HashMap<i64, uuid::Uuid> = HashMap::new(); //HashMap::new();
     let j_uuids1 = job_uuids.clone();
     let j_uuids2 = job_uuids.clone();
     
@@ -86,6 +98,7 @@ fn load_tasks_db() -> Result<Vec<SendMsgJob>> {
     let mut stmt = conn.prepare("SELECT chatid, hour, minute FROM jobs")?;
     let job_iter = stmt.query_map([], |row| {
         Ok(SendMsgJob {
+            job_type: JobType::Register,
             chatid: row.get(0)?,
             hour: row.get(1)?,
             minute: row.get(2)?,
@@ -140,9 +153,20 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: SendMsgJob) -> uuid::Uui
 
 // }
 
-async fn init_task_scheduler(bot: Bot, mut job_rx: broadcast::Receiver<SendMsgJob>, job_uuids: Arc<RwLock<HashMap<i64, uuid::Uuid>>>) {
+async fn init_task_scheduler(bot: Bot, mut job_rx: broadcast::Receiver<SendMsgJob>, mut job_uuids: HashMap<i64, uuid::Uuid>) {
     let tasks = load_tasks_db();
     let sched = JobScheduler::new().await.unwrap();
+
+    Job::new_async(
+        "0 1/5 * * * *",
+
+        move |_uuid, mut _l| {
+            Box::pin(async move {
+                scraper::prefetch().await;
+            })
+        },
+    )
+    .unwrap();
 
     for task in tasks.unwrap() {
         let bot = bot.clone();
@@ -154,41 +178,56 @@ async fn init_task_scheduler(bot: Bot, mut job_rx: broadcast::Receiver<SendMsgJo
 
         // let ok = job_uuids.write().await;
 
-        job_uuids.write().await.insert(chatid, uuid);
+
+        job_uuids.insert(chatid, uuid);
     }
 
     sched.start().await.unwrap();
 
     // set/update send time
     while let Ok(msg_job) = job_rx.recv().await {
-        println!("got new job: {:?}", msg_job);
-        // old job exists:
-        if let Some(old_uuid) = job_uuids.read().await.get(&msg_job.chatid) {
-            println!("old job has uuid: {}", old_uuid);
+        match msg_job.job_type {
+            JobType::Register => {
+                println!("got new job: {:?}", msg_job);
+                // old job exists:
+                if let Some(old_uuid) = job_uuids.get(&msg_job.chatid) {
+                    println!("old job has uuid: {}", old_uuid);
 
-            // unload old job
-            sched.context.job_delete_tx.send(*old_uuid).unwrap();
-            println!("old job unloaded");
+                    // unload old job
+                    sched.context.job_delete_tx.send(*old_uuid).unwrap();
+                    println!("old job unloaded");
 
-            // kill uuid
-            job_uuids.write().await.remove(&msg_job.chatid).unwrap();
-            println!("old job uuid removed")
-        } else {
-            println!("no previous job found");
+                    // kill uuid
+                    job_uuids.remove(&msg_job.chatid).unwrap();
+                    println!("old job uuid removed")
+                } else {
+                    println!("no previous job found");
+                }
+
+                // save new data to db
+                save_task_to_db(msg_job).unwrap();
+
+                // create or replace db entry
+                let new_uuid = load_job(bot.clone(), &sched, msg_job).await;
+
+                println!("new job has uuid: {}", new_uuid);
+                // insert new job uuid
+                job_uuids.insert(msg_job.chatid, new_uuid);
+            },
+            JobType::Unregister => {
+                // unregister is only passed if existence of job is guaranteed
+                let old_uuid = job_uuids.get(&msg_job.chatid).unwrap();
+
+                // unload old job
+                sched.context.job_delete_tx.send(*old_uuid).unwrap();
+                println!("old job unloaded");
+
+                // kill uuid
+                job_uuids.remove(&msg_job.chatid).unwrap();
+                println!("old job uuid removed")
+            }
         }
-
-        // save new data to db
-        save_task_to_db(msg_job).unwrap();
-
-        // create or replace db entry
-        let new_uuid = load_job(bot.clone(), &sched, msg_job).await;
-
-        println!("new job has uuid: {}", new_uuid);
-        // insert new job uuid
-        job_uuids.write().await.insert(msg_job.chatid, new_uuid);
     }
-
-    println!("post while let some");
 }
 
 #[derive(BotCommands, Clone)]
@@ -214,36 +253,85 @@ async fn answer(
     bot: Bot,
     msg: Message,
     cmd: Command,
-    job_uuids: Arc<RwLock<HashMap<i64, uuid::Uuid>>>,
+    job_uuids: HashMap<i64, uuid::Uuid>,
     job_tx: broadcast::Sender<SendMsgJob>,
 ) -> ResponseResult<()> {
     match cmd {
         Command::Start => {
             let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
 
-            if job_uuids.read().await.get(&msg.chat.id.0).is_none() {
+            let send_res = bot.send_message(msg.chat.id, Command::descriptions().to_string() + subtext)
+                .await?;
+
+            if job_uuids.get(&msg.chat.id.0).is_none() {
                 let first_msg_job = SendMsgJob {
+                    job_type: JobType::Register,
                     chatid: msg.chat.id.0,
                     hour: 6,
                     minute: 0,
                 };
 
                 job_tx.send(first_msg_job).unwrap();
+                bot.send_message(msg.chat.id, "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.").await?;
+            } else {
+                bot.send_message(msg.chat.id, "Automatische Nachrichten sind aktiviert.").await?;
+            }
+
+            send_res
+        }
+        Command::Heute => {
+            let text = scraper::build_chat_message(0).await;
+            bot.send_message(msg.chat.id, text).parse_mode(ParseMode::MarkdownV2).await?
+        }
+        Command::Morgen => {
+            let text = scraper::build_chat_message(1).await;
+            bot.send_message(msg.chat.id, text).parse_mode(ParseMode::MarkdownV2).await?
+        },
+        Command::Uebermorgen => {
+            let text = scraper::build_chat_message(2).await;
+            bot.send_message(msg.chat.id, text).parse_mode(ParseMode::MarkdownV2).await?
+        },
+        Command::Subscribe => {
+            let send_result;
+
+            if job_uuids.get(&msg.chat.id.0).is_some() {
+                send_result = bot.send_message(msg.chat.id, "Automatische Nachrichten sind schon aktiviert.").await?;
+
+            } else {
+                let new_msg_job = SendMsgJob {
+                    job_type: JobType::Register,
+                    chatid: msg.chat.id.0,
+                    hour: 6,
+                    minute: 0,
+                };
+                send_result = bot.send_message(msg.chat.id, "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.").await?; 
+                job_tx.send(new_msg_job).unwrap();
             }
 
 
-            bot.send_message(msg.chat.id, Command::descriptions().to_string() + subtext)
-                .await?
+            send_result
+            //HIER
+        },
+        Command::Unsubscribe => {
+            let send_result;
 
-        }
-        Command::Heute => {
-            // let msg =
-            bot.send_message(msg.chat.id, "Heute *fett* _und_").await?
-        }
-        Command::Morgen => bot.send_message(msg.chat.id, "Morgen").await?,
-        Command::Uebermorgen => bot.send_message(msg.chat.id, "Morgen").await?,
-        Command::Subscribe => bot.send_message(msg.chat.id, "Subscribe").await?,
-        Command::Unsubscribe => bot.send_message(msg.chat.id, "Unsubscribe").await?,
+            if job_uuids.get(&msg.chat.id.0).is_none() {
+                send_result = bot.send_message(msg.chat.id, "Automatische Nachrichten waren bereits deaktiviert.").await?;
+            } else {
+                let kill_msg = SendMsgJob {
+                    job_type: JobType::Unregister,
+                    chatid: msg.chat.id.0,
+                    hour: 0,
+                    minute: 0,
+                };
+
+                job_tx.send(kill_msg).unwrap();
+                send_result = bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.").await?;
+            }
+
+            send_result
+        },
+
         Command::Changetime => {
             let send_result;
 
@@ -253,6 +341,7 @@ async fn answer(
                     println!("success");
 
                     let new_msg_job = SendMsgJob {
+                        job_type: JobType::Register,
                         chatid: msg.chat.id.0,
                         hour,
                         minute,
@@ -292,8 +381,6 @@ async fn answer(
 }
 
 fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
-
-
     if let Some(first_arg) = txt.split(' ').nth(1) {
         lazy_static! {
             static ref RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
@@ -308,105 +395,8 @@ fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
             let minute = caps.get(2).unwrap().as_str().parse::<u32>().unwrap();
 
             Ok((hour, minute))
-
-
         }
     } else {
         Err(TimeParseError::NoTimePassed)
     }
 }
-
-// async fn build_chat_message(mode: i64) -> String {
-//     #[cfg(feature = "benchmark")]
-//     let now = Instant::now();
-
-//     let mut msg: String = String::new();
-
-//     // get requested date
-//     let mut requested_date = chrono::Local::now() + Duration::days(mode);
-//     let mut date_raised_by_days = 0;
-
-//     match requested_date.weekday() {
-//         // sat -> change req_date to mon
-//         Weekday::Sat => {
-//             requested_date += Duration::days(2);
-//             date_raised_by_days = 2;
-//         }
-//         Weekday::Sun => {
-//             requested_date += Duration::days(1);
-//             date_raised_by_days = 1;
-//         }
-//         _ => {
-//             // Any other weekday is fine, nothing to do
-//         }
-//     }
-
-//     #[cfg(feature = "benchmark")]
-//     println!("req setup took: {:.2?}", now.elapsed());
-
-//     // retrieve meals
-//     let day_meals = get_meals(requested_date).await;
-
-//     // start message formatting
-//     #[cfg(feature = "benchmark")]
-//     let now = Instant::now();
-
-//     // if mode=0, then "today" was requested. So if date_raised_by_days is != 0 AND mode=0, append warning
-//     let future_day_info = if mode == 0 && date_raised_by_days == 1 {
-//         "(Morgen)"
-//     } else if mode == 0 && date_raised_by_days == 2 {
-//         "(Übermorgen)"
-//     } else {
-//         ""
-//     };
-
-//     // insert date+future day info into msg
-//     msg += &format!(
-//         "{} {}\n",
-//         markdown::italic(&day_meals.date),
-//         future_day_info
-//     );
-
-//     // loop over meal groups
-//     for meal_group in day_meals.meal_groups {
-//         let mut price_is_shared = true;
-//         let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
-
-//         for sub_meal in &meal_group.sub_meals {
-//             if &sub_meal.price != price_first_submeal {
-//                 price_is_shared = false;
-//                 break;
-//             }
-//         }
-
-//         // Bold type of meal (-group)
-//         msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
-
-//         // loop over meals in meal group
-//         for sub_meal in &meal_group.sub_meals {
-//             // underlined single or multiple meal name
-//             msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
-
-//             // loop over ingredients of meal
-//             for ingredient in &sub_meal.additional_ingredients {
-//                 // appending ingredient to msg
-//                 msg += &format!("     + {}\n", markdown::italic(ingredient))
-//             }
-//             // appending price
-//             if !price_is_shared {
-//                 msg += &format!("   {}\n", sub_meal.price);
-//             }
-//         }
-//         if price_is_shared {
-//             msg += &format!("   {}\n", price_first_submeal);
-//         }
-//     }
-
-//     msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
-
-//     #[cfg(feature = "benchmark")]
-//     println!("message build took: {:.2?}\n\n", now.elapsed());
-
-//     // return
-//     escape_markdown_v2(&msg)
-// }
