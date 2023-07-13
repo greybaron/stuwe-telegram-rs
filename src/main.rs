@@ -313,10 +313,8 @@ async fn answer(
             //HIER
         },
         Command::Unsubscribe => {
-            let send_result;
-
             if job_uuids.get(&msg.chat.id.0).is_none() {
-                send_result = bot.send_message(msg.chat.id, "Automatische Nachrichten waren bereits deaktiviert.").await?;
+                bot.send_message(msg.chat.id, "Automatische Nachrichten waren bereits deaktiviert.").await?
             } else {
                 let kill_msg = SendMsgJob {
                     job_type: JobType::Unregister,
@@ -326,10 +324,8 @@ async fn answer(
                 };
 
                 job_tx.send(kill_msg).unwrap();
-                send_result = bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.").await?;
+                bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.").await?
             }
-
-            send_result
         },
 
         Command::Changetime => {

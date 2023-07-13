@@ -154,14 +154,12 @@ async fn reqwest_get_html_text(url_params: &String) -> String {
     let url_base: String =
         "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?".to_owned();
 
-    let html_text = reqwest::get(url_base + url_params)
+    reqwest::get(url_base + url_params)
         .await
         .expect("URL request failed")
         .text()
         .await
-        .unwrap();
-
-    html_text
+        .unwrap()
 }
 
 async fn extract_data_from_html(html_text: &str, req_date_formatted: String) -> DayMeals {
