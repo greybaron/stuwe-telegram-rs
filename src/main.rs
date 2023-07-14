@@ -48,7 +48,7 @@ async fn main() {
 }
 
 fn save_task_to_db(msg_job: JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("../../jobs.db")?;
 
     let mut stmt = conn
         .prepare_cached(
@@ -65,7 +65,7 @@ fn save_task_to_db(msg_job: JobHandlerTask) -> rusqlite::Result<()> {
 }
 
 fn delete_task_from_db(chatid: i64) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("../../jobs.db")?;
     let mut stmt = conn
         .prepare_cached("delete from jobs where chatid = ?1")
         .unwrap();
@@ -77,7 +77,7 @@ fn delete_task_from_db(chatid: i64) -> rusqlite::Result<()> {
 
 fn load_tasks_db() -> Result<Vec<JobHandlerTask>> {
     let mut tasks = Vec::new();
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("../../jobs.db")?;
     let mut stmt = conn
         .prepare_cached(
             "create table if not exists jobs (
