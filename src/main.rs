@@ -263,12 +263,12 @@ async fn answer(
 
             job_tx.send(check_exists_task).unwrap();
 
-            if job_exists_rx.recv().await.unwrap() {
+            if !job_exists_rx.recv().await.unwrap() {
                 let first_msg_job = JobHandlerTask {
                     job_type: JobType::Register,
                     chatid: msg.chat.id.0,
                     hour: Some(6),
-                    minute: Some(6),
+                    minute: Some(0),
                 };
 
                 job_tx.send(first_msg_job).unwrap();
