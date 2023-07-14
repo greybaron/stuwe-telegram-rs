@@ -160,15 +160,12 @@ async fn init_task_scheduler(
     prefetch().await;
 
     // run cache update every 5 minutes
-    let cache_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
-        // 0 1/5 * * * *
+    let cache_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
         let job_tx = job_tx.clone();
 
         Box::pin(async move {
-            println!("prefetch");
             let today_changed = prefetch().await;
             if today_changed {
-                println!("bot: today changed");
                 job_tx
                     .send(JobHandlerTask {
                         job_type: JobType::BroadcastUpdate,
@@ -239,7 +236,7 @@ async fn init_task_scheduler(
                     .unwrap();
             }
             JobType::BroadcastUpdate => {
-                println!("send update pls");
+                println!("Broadcasting meal change.");
                 for registration in &job_uuids {
                     bot.send_message(
                         ChatId(*registration.0),
