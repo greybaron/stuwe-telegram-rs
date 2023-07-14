@@ -10,7 +10,11 @@ use log::LevelFilter;
 use regex::Regex;
 use rusqlite::{params, Connection, Result};
 use std::collections::HashMap;
-use teloxide::{prelude::*, types::ParseMode, utils::command::BotCommands};
+use teloxide::{
+    prelude::*,
+    types::ParseMode,
+    utils::{command::BotCommands, markdown},
+};
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
@@ -23,6 +27,7 @@ async fn main() {
         broadcast::Sender<JobHandlerTask>,
         broadcast::Receiver<JobHandlerTask>,
     ) = broadcast::channel(10);
+    let job_tx2 = job_tx.clone();
 
     let (job_exists_tx, job_exists_rx): (broadcast::Sender<bool>, broadcast::Receiver<bool>) =
         broadcast::channel(10);
@@ -33,22 +38,21 @@ async fn main() {
     log::info!("Starting command bot...");
 
     let bot = Bot::from_env();
-
     let c_bot = bot.clone();
 
     let job_uuids: HashMap<i64, uuid::Uuid> = HashMap::new();
 
     tokio::spawn(async move {
-        init_task_scheduler(c_bot, job_rx, job_exists_tx, job_uuids).await;
+        init_task_scheduler(c_bot, job_tx, job_rx, job_exists_tx, job_uuids).await;
     });
 
     Command::repl(bot, move |bot, msg, cmd| {
-        answer(bot, msg, cmd, job_tx.clone(), job_exists_rx.resubscribe())
+        answer(bot, msg, cmd, job_tx2.clone(), job_exists_rx.resubscribe())
     })
     .await;
 }
 
-fn save_task_to_db(msg_job: JobHandlerTask) -> rusqlite::Result<()> {
+fn save_task_to_db(msg_job: &JobHandlerTask) -> rusqlite::Result<()> {
     let conn = Connection::open("../../jobs.db")?;
 
     let mut stmt = conn
@@ -58,9 +62,7 @@ fn save_task_to_db(msg_job: JobHandlerTask) -> rusqlite::Result<()> {
         )
         .unwrap();
 
-    stmt.execute(
-        params![msg_job.chatid, msg_job.hour, msg_job.minute],
-    )?;
+    stmt.execute(params![msg_job.chatid, msg_job.hour, msg_job.minute])?;
 
     Ok(())
 }
@@ -130,7 +132,7 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> uuid:
         move |_uuid, mut _l| {
             let bot = bot.clone();
             Box::pin(async move {
-                bot.send_message(ChatId(task.chatid), build_meal_message(0).await)
+                bot.send_message(ChatId(task.chatid.unwrap()), build_meal_message(0).await)
                     .parse_mode(ParseMode::MarkdownV2)
                     .await
                     .unwrap();
@@ -146,6 +148,7 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> uuid:
 
 async fn init_task_scheduler(
     bot: Bot,
+    job_tx: broadcast::Sender<JobHandlerTask>,
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     job_exists_tx: broadcast::Sender<bool>,
     mut job_uuids: HashMap<i64, uuid::Uuid>,
@@ -157,18 +160,34 @@ async fn init_task_scheduler(
     prefetch().await;
 
     // run cache update every 5 minutes
-    Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
+    let cache_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
+        // 0 1/5 * * * *
+        let job_tx = job_tx.clone();
+
         Box::pin(async move {
-            prefetch().await;
+            println!("prefetch");
+            let today_changed = prefetch().await;
+            if today_changed {
+                println!("bot: today changed");
+                job_tx
+                    .send(JobHandlerTask {
+                        job_type: JobType::BroadcastUpdate,
+                        chatid: None,
+                        hour: None,
+                        minute: None,
+                    })
+                    .unwrap();
+            }
         })
     })
     .unwrap();
+    sched.add(cache_job).await.unwrap();
 
     for task in tasks.unwrap() {
         let bot = bot.clone();
 
-        let uuid: uuid::Uuid = load_job(bot, &sched, task).await;
-        job_uuids.insert(task.chatid, uuid);
+        let j_uuid: uuid::Uuid = load_job(bot, &sched, task.clone()).await;
+        job_uuids.insert(task.chatid.unwrap(), j_uuid);
     }
 
     // start scheduler (non blocking)
@@ -179,45 +198,62 @@ async fn init_task_scheduler(
         match msg_job.job_type {
             JobType::Register => {
                 // old job exists:
-                if let Some(old_uuid) = job_uuids.get(&msg_job.chatid) {
-                    println!("Changing job time for chatid: {}", &msg_job.chatid);
+                if let Some(old_uuid) = job_uuids.get(&msg_job.chatid.unwrap()) {
+                    println!("Changing job time for chatid: {}", &msg_job.chatid.unwrap());
                     // unload old job
                     sched.context.job_delete_tx.send(*old_uuid).unwrap();
 
                     // kill uuid
-                    job_uuids.remove(&msg_job.chatid).unwrap();
+                    job_uuids.remove(&msg_job.chatid.unwrap()).unwrap();
                 } else {
-                    println!("Registering job for chatid: {}", &msg_job.chatid);
+                    println!("Registering job for chatid: {}", &msg_job.chatid.unwrap());
                 }
 
                 // save new data to db
-                save_task_to_db(msg_job).unwrap();
+                save_task_to_db(&msg_job).unwrap();
 
                 // create or replace db entry
-                let new_uuid = load_job(bot.clone(), &sched, msg_job).await;
+                let new_uuid = load_job(bot.clone(), &sched, msg_job.clone()).await;
 
                 // insert new job uuid
-                job_uuids.insert(msg_job.chatid, new_uuid);
+                job_uuids.insert(msg_job.chatid.unwrap(), new_uuid);
             }
             JobType::Unregister => {
-                println!("Unregistering job for chatid: {}", &msg_job.chatid);
+                println!("Unregistering job for chatid: {}", &msg_job.chatid.unwrap());
 
                 // unregister is only invoked if existence of job is guaranteed
-                let old_uuid = job_uuids.get(&msg_job.chatid).unwrap();
+                let old_uuid = job_uuids.get(&msg_job.chatid.unwrap()).unwrap();
 
                 // unload old job
                 sched.context.job_delete_tx.send(*old_uuid).unwrap();
 
                 // kill uuid
-                job_uuids.remove(&msg_job.chatid).unwrap();
+                job_uuids.remove(&msg_job.chatid.unwrap()).unwrap();
 
                 // delete from db
-                delete_task_from_db(msg_job.chatid).unwrap();
+                delete_task_from_db(msg_job.chatid.unwrap()).unwrap();
             }
             JobType::CheckJobExists => {
                 job_exists_tx
-                    .send(job_uuids.get(&msg_job.chatid).is_some())
+                    .send(job_uuids.get(&msg_job.chatid.unwrap()).is_some())
                     .unwrap();
+            }
+            JobType::BroadcastUpdate => {
+                println!("send update pls");
+                for registration in &job_uuids {
+                    bot.send_message(
+                        ChatId(*registration.0),
+                        format!(
+                            "{}\n{}",
+                            &markdown::bold(&markdown::underline("Planänderung:")),
+                            build_meal_message(0).await
+                        ),
+                    )
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await
+                    .unwrap();
+                }
+                // bot.send
             }
         }
     }
@@ -259,7 +295,7 @@ async fn answer(
 
             let check_exists_task = JobHandlerTask {
                 job_type: JobType::CheckJobExists,
-                chatid: msg.chat.id.0,
+                chatid: Some(msg.chat.id.0),
                 hour: None,
                 minute: None,
             };
@@ -269,7 +305,7 @@ async fn answer(
             if !job_exists_rx.recv().await.unwrap() {
                 let first_msg_job = JobHandlerTask {
                     job_type: JobType::Register,
-                    chatid: msg.chat.id.0,
+                    chatid: Some(msg.chat.id.0),
                     hour: Some(6),
                     minute: Some(0),
                 };
@@ -309,7 +345,7 @@ async fn answer(
             let send_result;
             let check_exists_task = JobHandlerTask {
                 job_type: JobType::CheckJobExists,
-                chatid: msg.chat.id.0,
+                chatid: Some(msg.chat.id.0),
                 hour: None,
                 minute: None,
             };
@@ -326,7 +362,7 @@ async fn answer(
             } else {
                 let new_msg_job = JobHandlerTask {
                     job_type: JobType::Register,
-                    chatid: msg.chat.id.0,
+                    chatid: Some(msg.chat.id.0),
                     hour: Some(6),
                     minute: Some(0),
                 };
@@ -341,11 +377,11 @@ async fn answer(
 
             send_result
         }
-        
+
         Command::Unsubscribe => {
             let check_exists_task = JobHandlerTask {
                 job_type: JobType::CheckJobExists,
-                chatid: msg.chat.id.0,
+                chatid: Some(msg.chat.id.0),
                 hour: None,
                 minute: None,
             };
@@ -361,7 +397,7 @@ async fn answer(
             } else {
                 let kill_msg = JobHandlerTask {
                     job_type: JobType::Unregister,
-                    chatid: msg.chat.id.0,
+                    chatid: Some(msg.chat.id.0),
                     hour: None,
                     minute: None,
                 };
@@ -379,12 +415,12 @@ async fn answer(
                 Ok((hour, minute)) => {
                     let new_msg_job = JobHandlerTask {
                         job_type: JobType::Register,
-                        chatid: msg.chat.id.0,
+                        chatid: Some(msg.chat.id.0),
                         hour: Some(hour),
                         minute: Some(minute),
                     };
 
-                    match save_task_to_db(new_msg_job) {
+                    match save_task_to_db(&new_msg_job) {
                         Ok(()) => {
                             send_result = bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/changetime [Zeit] zum Ändern\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
                             job_tx.send(new_msg_job).unwrap();

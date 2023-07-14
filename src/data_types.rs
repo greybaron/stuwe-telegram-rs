@@ -1,44 +1,45 @@
-use thiserror::Error;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
-// used for teloxide/Telegram bot itself
-#[derive(Debug, Copy, Clone)]
+// used internally for teloxide/Telegram bot
+#[derive(Debug, Clone)]
 pub enum JobType {
     Register,
     Unregister,
-    CheckJobExists
+    CheckJobExists,
+    BroadcastUpdate,
 }
 
-// pretty lazy
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Clone)]
 pub struct JobHandlerTask {
     pub job_type: JobType,
-    pub chatid: i64,
+    pub chatid: Option<i64>,
     pub hour: Option<u32>,
-    pub minute: Option<u32>
+    pub minute: Option<u32>,
 }
 
-#[derive(Debug, Error, Clone)]
+#[derive(Error, Debug, Clone)]
 pub enum TimeParseError {
     #[error("Keine Zeit übergeben")]
     NoTimePassed,
     #[error("Zeit konnte nicht gelesen werden")]
-    InvalidTimePassed
+    InvalidTimePassed,
 }
 
-#[derive(Serialize, Deserialize)]
+// used for stuwe parser/message generator
+#[derive(Serialize, Deserialize, Debug)]
 pub struct DayMeals {
     pub date: String,
     pub meal_groups: Vec<MealGroup>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct MealGroup {
     pub meal_type: String,
     pub sub_meals: Vec<SingleMeal>,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct SingleMeal {
     pub name: String,
     pub additional_ingredients: Vec<String>,

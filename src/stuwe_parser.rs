@@ -1,11 +1,11 @@
-use chrono::{DateTime, Datelike, Duration, Local, Weekday};
+use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
+use scraper::{Html, Selector};
+use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for write_to_file etc
-use scraper::{Html, Selector};
-use selectors::{attr::CaseSensitivity, Element};
 
-use crate::data_types::{SingleMeal, DayMeals, MealGroup};
+use crate::data_types::{DayMeals, MealGroup, SingleMeal};
 
 pub async fn build_meal_message(days_forward: i64) -> String {
     #[cfg(feature = "benchmark")]
@@ -51,12 +51,16 @@ pub async fn build_meal_message(days_forward: i64) -> String {
         None
     };
 
-    // insert date + potential future day warning 
+    // insert date + potential future day warning
     msg += &format!(
         "{}{}\n",
         markdown::italic(&day_meals.date),
         future_day_info.unwrap_or_default()
     );
+
+    if day_meals.meal_groups.is_empty() {
+        msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+    }
 
     // loop over meal groups
     for meal_group in day_meals.meal_groups {
@@ -102,7 +106,6 @@ pub async fn build_meal_message(days_forward: i64) -> String {
     escape_markdown_v2(&msg)
 }
 
-
 async fn get_meals(requested_date: DateTime<Local>) -> DayMeals {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
@@ -111,8 +114,8 @@ async fn get_meals(requested_date: DateTime<Local>) -> DayMeals {
 
     // url parameters
     let loc = 140;
-    let req_date_formatted = build_req_date_string(requested_date);
-    let url_params = format!("location={}&date={}", loc, req_date_formatted);
+    let requested_date_urlfmt = build_req_date_string(requested_date);
+    let url_params = format!("location={}&date={}", loc, requested_date_urlfmt);
 
     // try to read from cache
     match File::open(format!("cached_data/{}.json", &url_params)).await {
@@ -137,7 +140,7 @@ async fn get_meals(requested_date: DateTime<Local>) -> DayMeals {
             println!("req return took: {:.2?}", now.elapsed());
 
             // extract data to struct
-            let day_meals = extract_data_from_html(&html_text, req_date_formatted).await;
+            let day_meals = extract_data_from_html(&html_text, requested_date).await;
 
             // save struct to cache
             save_data_to_cache(&html_text, &day_meals, &url_params).await;
@@ -162,7 +165,7 @@ async fn reqwest_get_html_text(url_params: &String) -> String {
         .unwrap()
 }
 
-async fn extract_data_from_html(html_text: &str, req_date_formatted: String) -> DayMeals {
+async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> DayMeals {
     #[cfg(feature = "benchmark")]
     let now = Instant::now();
 
@@ -172,28 +175,16 @@ async fn extract_data_from_html(html_text: &str, req_date_formatted: String) -> 
 
     // retrieving reported date and comparing to requested date
     let date_sel = Selector::parse(r#"select#edit-date>option[selected='selected']"#).unwrap();
-    let received_date = document.select(&date_sel).next().unwrap().inner_html();
+    let received_date_human = document.select(&date_sel).next().unwrap().inner_html();
 
-    // formatting received date to format in URL parameter,
-    // to check if correct date was returned
-    let received_date_formatted = format!(
-        "{:04}-{:02}-{:02}",
-        // year
-        received_date[received_date.len() - 4..]
-            .parse::<i32>()
-            .unwrap(),
-        // month
-        received_date[received_date.len() - 7..received_date.len() - 5]
-            .parse::<i32>()
-            .unwrap(),
-        // day
-        received_date[received_date.len() - 10..received_date.len() - 8]
-            .parse::<i32>()
-            .unwrap(),
-    );
+    let sub = received_date_human.split(' ').nth(1).unwrap();
+    let received_date = NaiveDate::parse_from_str(sub, "%d.%m.%Y").unwrap();
 
-    if received_date_formatted != req_date_formatted {
-        println!("Für den Tag existiert noch kein Plan.");
+    if received_date != requested_date.naive_local().date() {
+        return DayMeals {
+            date: german_date_fmt(requested_date.naive_local().date()),
+            meal_groups: v_meal_groups,
+        };
     }
 
     let container_sel = Selector::parse(r#"section.meals"#).unwrap();
@@ -272,9 +263,8 @@ async fn extract_data_from_html(html_text: &str, req_date_formatted: String) -> 
     #[cfg(feature = "benchmark")]
     println!("parsing took: {:.2?}", now.elapsed());
 
-    
     DayMeals {
-        date: received_date,
+        date: received_date_human,
         meal_groups: v_meal_groups,
     }
 }
@@ -314,9 +304,26 @@ fn build_req_date_string(requested_date: DateTime<Local>) -> String {
     out
 }
 
+fn german_date_fmt(date: NaiveDate) -> String {
+    let mut output = String::new();
+
+    let week_days = [
+        "Montag, ",
+        "Dienstag, ",
+        "Mittwoch, ",
+        "Donnerstag, ",
+        "Freitag, ",
+    ];
+
+    output += week_days[date.weekday().num_days_from_monday() as usize];
+    output += &date.format("%d.%m.%Y").to_string();
+
+    output
+}
+
 fn escape_markdown_v2(input: &str) -> String {
     // all 'special' chars have to be escaped when using telegram markdown_v2
-    
+
     input
         .replace('.', r"\.")
         .replace('!', r"\!")
@@ -331,7 +338,7 @@ fn escape_markdown_v2(input: &str) -> String {
         .replace("&amp;", "&")
 }
 
-pub async fn prefetch() {
+pub async fn prefetch() -> bool {
     // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
     #[cfg(feature = "benchmark")]
     let now = Instant::now();
@@ -365,7 +372,7 @@ pub async fn prefetch() {
             days.push(chrono::Local::now() + Duration::days(2));
         }
         _ => {
-            // Monday/Tuesday/Wednesday expect as you'd expect.
+            // Monday/Tuesday/Wednesday behave as you'd expect.
             days.push(chrono::Local::now());
             days.push(chrono::Local::now() + Duration::days(1));
             days.push(chrono::Local::now() + Duration::days(2));
@@ -382,23 +389,30 @@ pub async fn prefetch() {
 
     // spawning task for every day
     for day in days {
+        // too lazy to do this properly
+
         handles.push(tokio::spawn(prefetch_for_day(day, loc)))
     }
 
+    let mut today_changed = false;
     // awaiting results of every task
     for handle in handles {
-        handle.await.expect("Panic in task");
+        if handle.await.unwrap() && !today_changed {
+            today_changed = true;
+        }
     }
+
+    today_changed
 }
 
-async fn prefetch_for_day(day: DateTime<Local>, loc: i32) {
+async fn prefetch_for_day(day: DateTime<Local>, loc: i32) -> bool {
     #[cfg(feature = "benchmark")]
     println!("starting req for {}", day.weekday());
     #[cfg(feature = "benchmark")]
     let now = Instant::now();
 
-    let req_date_formatted = build_req_date_string(day);
-    let url_params = format!("location={}&date={}", loc, req_date_formatted);
+    let requested_date_urlfmt = build_req_date_string(day);
+    let url_params = format!("location={}&date={}", loc, requested_date_urlfmt);
 
     // getting data from server
     let html_text = reqwest_get_html_text(&url_params).await;
@@ -414,17 +428,25 @@ async fn prefetch_for_day(day: DateTime<Local>, loc: i32) {
 
             // cache is outdated -> overwrite
             if contents != html_text {
-                let day_meals = extract_data_from_html(&html_text, req_date_formatted).await;
+                let day_meals = extract_data_from_html(&html_text, day).await;
                 save_data_to_cache(&html_text, &day_meals, &url_params).await;
 
                 #[cfg(feature = "benchmark")]
                 println!("{}: replaced", day.weekday());
+
+                // cache was updated - return true if "today" was updated
+                day.weekday() == chrono::Local::now().weekday()
+            } else {
+                false
             }
         }
         // cache file doesnt exist, create it
         Err(_) => {
-            let day_meals = extract_data_from_html(&html_text, req_date_formatted).await;
+            let day_meals = extract_data_from_html(&html_text, day).await;
             save_data_to_cache(&html_text, &day_meals, &url_params).await;
+
+            // return true if cache for today was updated
+            day.weekday() == chrono::Local::now().weekday()
         }
     }
 }
