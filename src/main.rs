@@ -313,7 +313,7 @@ async fn answer(
                 job_tx.send(first_msg_job).unwrap();
                 bot.send_message(
                     msg.chat.id,
-                    "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.",
+                    "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /changetime [Zeit]",
                 )
                 .await?;
             } else {
@@ -369,7 +369,7 @@ async fn answer(
                 send_result = bot
                     .send_message(
                         msg.chat.id,
-                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.",
+                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /changetime [Zeit]",
                     )
                     .await?;
                 job_tx.send(new_msg_job).unwrap();
@@ -422,7 +422,7 @@ async fn answer(
 
                     match save_task_to_db(&new_msg_job) {
                         Ok(()) => {
-                            send_result = bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/changetime [Zeit] zum Ändern\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
+                            send_result = bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
                             job_tx.send(new_msg_job).unwrap();
                         }
                         Err(e) => {
