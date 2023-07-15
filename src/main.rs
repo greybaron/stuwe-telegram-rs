@@ -1,5 +1,6 @@
 mod data_types;
-mod scraper;
+mod stuwe_parser;
+use stuwe_parser::{build_meal_message, prefetch};
 
 use data_types::{JobHandlerTask, JobType, TimeParseError};
 
@@ -31,11 +32,11 @@ async fn main() {
         .init();
     log::info!("Starting command bot...");
 
-    let bot = Bot::from_env(); //.parse_mode(ParseMode::MarkdownV2);
+    let bot = Bot::from_env();
 
     let c_bot = bot.clone();
 
-    let job_uuids: HashMap<i64, uuid::Uuid> = HashMap::new(); //HashMap::new();
+    let job_uuids: HashMap<i64, uuid::Uuid> = HashMap::new();
 
     tokio::spawn(async move {
         init_task_scheduler(c_bot, job_rx, job_exists_tx, job_uuids).await;
@@ -58,7 +59,7 @@ fn save_task_to_db(msg_job: JobHandlerTask) -> rusqlite::Result<()> {
         .unwrap();
 
     stmt.execute(
-        params![msg_job.chatid, msg_job.hour, msg_job.minute], // (msg_job.chatid, msg_job.hour, msg_job.minute),
+        params![msg_job.chatid, msg_job.hour, msg_job.minute],
     )?;
 
     Ok(())
@@ -109,6 +110,7 @@ fn load_tasks_db() -> Result<Vec<JobHandlerTask>> {
 }
 
 async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> uuid::Uuid {
+    // convert de time to utc
     let de_time = chrono::Local::now()
         .with_hour(task.hour.unwrap())
         .unwrap()
@@ -126,10 +128,9 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> uuid:
         )
         .as_str(),
         move |_uuid, mut _l| {
-            // help
             let bot = bot.clone();
             Box::pin(async move {
-                bot.send_message(ChatId(task.chatid), scraper::build_chat_message(0).await)
+                bot.send_message(ChatId(task.chatid), build_meal_message(0).await)
                     .parse_mode(ParseMode::MarkdownV2)
                     .await
                     .unwrap();
@@ -153,11 +154,12 @@ async fn init_task_scheduler(
     let sched = JobScheduler::new().await.unwrap();
 
     // always update cache on startup
-    scraper::prefetch().await;
+    prefetch().await;
 
+    // run cache update every 5 minutes
     Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
         Box::pin(async move {
-            scraper::prefetch().await;
+            prefetch().await;
         })
     })
     .unwrap();
@@ -169,9 +171,10 @@ async fn init_task_scheduler(
         job_uuids.insert(task.chatid, uuid);
     }
 
+    // start scheduler (non blocking)
     sched.start().await.unwrap();
 
-    // set/update send time
+    // receive job update msg (register/unregister/check existence)
     while let Ok(msg_job) = job_rx.recv().await {
         match msg_job.job_type {
             JobType::Register => {
@@ -199,7 +202,7 @@ async fn init_task_scheduler(
             JobType::Unregister => {
                 println!("Unregistering job for chatid: {}", &msg_job.chatid);
 
-                // unregister is only passed if existence of job is guaranteed
+                // unregister is only invoked if existence of job is guaranteed
                 let old_uuid = job_uuids.get(&msg_job.chatid).unwrap();
 
                 // unload old job
@@ -285,19 +288,19 @@ async fn answer(
             send_res
         }
         Command::Heute => {
-            let text = scraper::build_chat_message(0).await;
+            let text = build_meal_message(0).await;
             bot.send_message(msg.chat.id, text)
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?
         }
         Command::Morgen => {
-            let text = scraper::build_chat_message(1).await;
+            let text = build_meal_message(1).await;
             bot.send_message(msg.chat.id, text)
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?
         }
         Command::Uebermorgen => {
-            let text = scraper::build_chat_message(2).await;
+            let text = build_meal_message(2).await;
             bot.send_message(msg.chat.id, text)
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?
@@ -337,8 +340,8 @@ async fn answer(
             }
 
             send_result
-            //HIER
         }
+        
         Command::Unsubscribe => {
             let check_exists_task = JobHandlerTask {
                 job_type: JobType::CheckJobExists,

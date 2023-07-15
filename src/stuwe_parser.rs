@@ -7,14 +7,14 @@ use selectors::{attr::CaseSensitivity, Element};
 
 use crate::data_types::{SingleMeal, DayMeals, MealGroup};
 
-pub async fn build_chat_message(mode: i64) -> String {
+pub async fn build_meal_message(days_forward: i64) -> String {
     #[cfg(feature = "benchmark")]
     let now = Instant::now();
 
     let mut msg: String = String::new();
 
     // get requested date
-    let mut requested_date = chrono::Local::now() + Duration::days(mode);
+    let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
     let mut date_raised_by_days = 0;
 
     match requested_date.weekday() {
@@ -42,20 +42,20 @@ pub async fn build_chat_message(mode: i64) -> String {
     #[cfg(feature = "benchmark")]
     let now = Instant::now();
 
-    // if mode=0, then "today" was requested. So if date_raised_by_days is != 0 AND mode=0, append warning
-    let future_day_info = if mode == 0 && date_raised_by_days == 1 {
-        "(Morgen)"
-    } else if mode == 0 && date_raised_by_days == 2 {
-        "(Übermorgen)"
+    // warn if requested "today" was raised to next monday (requested on sat/sun)
+    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
+        Some(" (Morgen)")
+    } else if days_forward == 0 && date_raised_by_days == 2 {
+        Some(" (Übermorgen)")
     } else {
-        ""
+        None
     };
 
-    // insert date+future day info into msg
+    // insert date + potential future day warning 
     msg += &format!(
-        "{} {}\n",
+        "{}{}\n",
         markdown::italic(&day_meals.date),
-        future_day_info
+        future_day_info.unwrap_or_default()
     );
 
     // loop over meal groups
