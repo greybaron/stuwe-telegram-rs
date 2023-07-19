@@ -21,7 +21,8 @@ pub struct JobHandlerTask {
     pub minute: Option<u32>,
 }
 
-pub type RegistrationEntry = (Option<Uuid>, u8);
+// opt (job uuid), mensa id, opt(hour), opt(min)
+pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>);
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {

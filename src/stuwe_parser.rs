@@ -307,7 +307,6 @@ fn escape_markdown_v2(input: &str) -> String {
 pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
     // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
     // returns a vector of mensa locations whose 'today' plan was updated
-    log::debug!("updating cache");
 
     // days will be selected using this rule:
     // if current day ... then ...
@@ -411,7 +410,7 @@ async fn save_to_cache(
     let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
 
     // read (and update) cached json
-    let val = match File::open(format!("cached_data/{}.json", &url_params)).await {
+     match File::open(format!("cached_data/{}.json", &url_params)).await {
         Ok(mut json) => {
             let mut cache_json_text = String::new();
             json.read_to_string(&mut cache_json_text).await.unwrap();
@@ -420,6 +419,7 @@ async fn save_to_cache(
             // return new data if requested
             if downloaded_json_text != cache_json_text {
                 save_update_cache(&url_params, &downloaded_json_text).await;
+                log::debug!("update cache {}: {:.2?}", mensa_id, now.elapsed());
                 (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
                 Some(downloaded_meals))
             } else {
@@ -428,15 +428,11 @@ async fn save_to_cache(
         }
         Err(_) => {
             save_update_cache(&url_params, &downloaded_json_text).await;
+            log::debug!("create cache {}: {:.2?}", mensa_id, now.elapsed());
             (
                 if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
                 Some(downloaded_meals)
             )
         }
-    };
-
-
-
-    log::debug!("save_to_cache {}: {:.2?}", mensa_id, now.elapsed());
-    val
+    }
 }

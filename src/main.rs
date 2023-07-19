@@ -578,7 +578,7 @@ async fn init_task_scheduler(
         let bot = bot.clone();
 
         let uuid = load_job(bot, &sched, task.clone()).await;
-        loaded_user_data.insert(task.chat_id.unwrap(), (uuid, task.mensa_id.unwrap()));
+        loaded_user_data.insert(task.chat_id.unwrap(), (uuid, task.mensa_id.unwrap(), task.hour, task.minute));
     }
 
     // start scheduler (non blocking)
@@ -607,7 +607,7 @@ async fn init_task_scheduler(
                 // insert new job uuid
                 loaded_user_data.insert(
                     msg_job.chat_id.unwrap(),
-                    (new_uuid, msg_job.mensa_id.unwrap()),
+                    (new_uuid, msg_job.mensa_id.unwrap(), msg_job.hour, msg_job.minute),
                 );
             }
             JobType::UpdateRegistration => {
@@ -636,7 +636,7 @@ async fn init_task_scheduler(
                         previous_registration.1
                     };
     
-                    loaded_user_data.insert(msg_job.chat_id.unwrap(), (new_uuid, mensa_id));
+                    loaded_user_data.insert(msg_job.chat_id.unwrap(), (new_uuid, mensa_id, msg_job.hour, msg_job.minute));
     
                     // update any values that are to be changed, aka are Some()
                     update_db_row(&msg_job).unwrap();
@@ -660,7 +660,7 @@ async fn init_task_scheduler(
                     .unwrap();
 
                 // kill uuid from this thing
-                loaded_user_data.insert(msg_job.chat_id.unwrap(), (None, previous_registration.1));
+                loaded_user_data.insert(msg_job.chat_id.unwrap(), (None, previous_registration.1, None, None));
 
                 // delete from db
                 task_db_kill_auto(msg_job.chat_id.unwrap()).unwrap();
@@ -678,23 +678,29 @@ async fn init_task_scheduler(
             JobType::BroadcastUpdate => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &msg_job.mensa_id.unwrap());
                 for registration in &loaded_user_data {
+
                     let chat_id = *registration.0;
-                    let mensa_id = registration.1 .1;
+                    let registration_data = registration.1;
+                    let mensa_id = registration_data.1;
 
-                    if mensa_id == msg_job.mensa_id.unwrap() {
-                        log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
+                    let now = chrono::Local::now();
 
-                        bot.send_message(
-                            ChatId(chat_id),
-                            format!(
-                                "{}\n{}",
-                                &markdown::bold(&markdown::underline("Planänderung:")),
-                                build_meal_message(0, 140).await
-                            ),
-                        )
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .await
-                        .unwrap();
+                    if let (Some(job_hour), Some(job_minute)) = (registration_data.2, registration_data.3) {
+                        if mensa_id == msg_job.mensa_id.unwrap() && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute()) {
+                            log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
+    
+                            bot.send_message(
+                                ChatId(chat_id),
+                                format!(
+                                    "{}\n{}",
+                                    &markdown::bold(&markdown::underline("Planänderung:")),
+                                    build_meal_message(0, 140).await
+                                ),
+                            )
+                            .parse_mode(ParseMode::MarkdownV2)
+                            .await
+                            .unwrap();
+                        }
                     }
                 }
             }
