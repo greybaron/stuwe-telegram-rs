@@ -132,6 +132,7 @@ async fn reqwest_get_html_text(url_params: &String) -> String {
 }
 
 async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> MealsForDay {
+    let now = Instant::now();
     let mut v_meal_groups: Vec<MealGroup> = Vec::new();
 
     let document = Html::parse_fragment(html_text);
@@ -224,6 +225,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
         }
     }
 
+    log::debug!("parsing html: {:.2?}", now.elapsed());
     MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
@@ -231,20 +233,8 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
 }
 
 async fn save_update_cache(url_params: &str, json_text: &str) {
-    let now = Instant::now();
-    // writes html_text and day_meals struct to cache files
-
-    // checks cache dir existence, and creates it if not found
+    // check cache dir existence, and create if not found
     std::fs::create_dir_all("cached_data/").expect("failed to create data cache dir");
-
-    // // saving html content (string comparison is faster than hashing)
-    // let mut html_file = File::create(format!("cached_data/{}", &url_params))
-    //     .await
-    //     .expect("failed to create a cache file");
-    // html_file
-    //     .write_all(html_text.as_bytes())
-    //     .await
-    //     .expect("failed to write received data to cache");
 
     let mut json_file = File::create(format!("cached_data/{}.json", &url_params))
         .await
@@ -253,8 +243,6 @@ async fn save_update_cache(url_params: &str, json_text: &str) {
         .write_all(json_text.as_bytes())
         .await
         .expect("failed to write to a json file");
-
-    log::debug!("saving data to cache: {:.2?}", now.elapsed());
 }
 
 fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> String {
@@ -400,11 +388,13 @@ async fn save_to_cache(
     day: DateTime<Local>,
     mensa_id: u8,
 ) -> (Option<u8>, Option<MealsForDay>) {
-    let now = Instant::now();
-
     let url_params = build_url_params(day, mensa_id);
+    
     // getting data from server
+    let req_now = Instant::now();
     let downloaded_html = reqwest_get_html_text(&url_params).await;
+    log::debug!("got html after {:.2?}", req_now.elapsed());
+
     let downloaded_meals = extract_data_from_html(&downloaded_html, day).await;
     // serialize downloaded meals
     let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
@@ -419,7 +409,6 @@ async fn save_to_cache(
             // return new data if requested
             if downloaded_json_text != cache_json_text {
                 save_update_cache(&url_params, &downloaded_json_text).await;
-                log::debug!("update cache {}: {:.2?}", mensa_id, now.elapsed());
                 (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
                 Some(downloaded_meals))
             } else {
@@ -428,7 +417,6 @@ async fn save_to_cache(
         }
         Err(_) => {
             save_update_cache(&url_params, &downloaded_json_text).await;
-            log::debug!("create cache {}: {:.2?}", mensa_id, now.elapsed());
             (
                 if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
                 Some(downloaded_meals)
