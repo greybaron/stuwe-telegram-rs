@@ -111,9 +111,9 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Meals
 
     // try to read from cache
     if let Some(day_meals) = json_cache_to_meal(&url_params).await {
-        return day_meals;
+        day_meals
     } else {
-        save_to_cache(requested_date, mensa_location, true).await.1.unwrap()
+        save_to_cache(requested_date, mensa_location).await.1.unwrap()
     }
 }
 
@@ -305,11 +305,9 @@ fn escape_markdown_v2(input: &str) -> String {
 }
 
 pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
+    // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
     // returns a vector of mensa locations whose 'today' plan was updated
     log::debug!("updating cache");
-    return vec![];
-    // let mensen: [u8; 9] = [153, 127, 118, 106, 115, 162, 111, 140, 170];
-    // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
 
     // days will be selected using this rule:
     // if current day ... then ...
@@ -361,7 +359,7 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
         // spawning task for every day
         for day in &days {
             handles.push(tokio::spawn({
-                save_to_cache(*day, *mensa_id, false)
+                save_to_cache(*day, *mensa_id)
             }))
         }
     }
@@ -402,7 +400,6 @@ async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
 async fn save_to_cache(
     day: DateTime<Local>,
     mensa_id: u8,
-    return_new_data: bool,
 ) -> (Option<u8>, Option<MealsForDay>) {
     let now = Instant::now();
 
@@ -414,51 +411,32 @@ async fn save_to_cache(
     let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
 
     // read (and update) cached json
-    match File::open(format!("cached_data/{}.json", &url_params)).await {
+    let val = match File::open(format!("cached_data/{}.json", &url_params)).await {
         Ok(mut json) => {
             let mut cache_json_text = String::new();
             json.read_to_string(&mut cache_json_text).await.unwrap();
 
+            // cache was updated, return mensa_id if 'today' was updated
+            // return new data if requested
             if downloaded_json_text != cache_json_text {
                 save_update_cache(&url_params, &downloaded_json_text).await;
-                (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None}, Some(downloaded_meals))
+                (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
+                Some(downloaded_meals))
             } else {
                 (None, Some(downloaded_meals))
             }
         }
         Err(_) => {
             save_update_cache(&url_params, &downloaded_json_text).await;
-            (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None}, Some(downloaded_meals))
+            (
+                if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
+                Some(downloaded_meals)
+            )
         }
-    }
+    };
 
-    // let opt_new_data = if return_new_data {
-    //     Some(downloaded_meals)
-    // } else {
-    //     None
-    // };
 
-    // match File::open(format!("cached_data/{}.json", &url_params)).await {
-    //     Ok(mut json) => {
-    //         let mut cache_json_text = String::new();
-    //         json.read_to_string(&mut cache_json_text).await.unwrap();
 
-    //         if downloaded_json_text != cache_json_text {
-    //             save_update_cache(&url_params, &downloaded_json_text).await;
-    //         } else {
-    //             log::debug!("update_cache: cache not updated: {:.2?}", now.elapsed());
-    //         }
-    //     }
-    //     Err(_) => {
-    //         save_update_cache(&url_params, &downloaded_json_text).await;
-    //         // let mut new_json = File::create(format!("cached_data/{}.json", &url_params)).await.unwrap();
-    //         // new_json
-    //         //     .write_all(downloaded_json_text.as_bytes())
-    //         //     .await
-    //         //     .expect("failed to write to a json file");
-    //     }
-    // }
-
-    // return true if "today" was updated
-    // (day.weekday() == chrono::Local::now().weekday(), opt_new_data)
+    log::debug!("save_to_cache {}: {:.2?}", mensa_id, now.elapsed());
+    val
 }

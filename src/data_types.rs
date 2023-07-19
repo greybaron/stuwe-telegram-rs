@@ -1,25 +1,27 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+use uuid::Uuid;
 
 // used internally for teloxide/Telegram bot
 #[derive(Debug, Clone)]
 pub enum JobType {
     Register,
-    UpdateRegistration,
     Unregister,
-    // ChangeMensa,
-    GetExistingJobData,
+    QueryRegistration,
+    UpdateRegistration,
     BroadcastUpdate,
 }
 
 #[derive(Debug, Clone)]
 pub struct JobHandlerTask {
     pub job_type: JobType,
-    pub chatid: Option<i64>,
+    pub chat_id: Option<i64>,
     pub mensa_id: Option<u8>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
 }
+
+pub type RegistrationEntry = (Option<Uuid>, u8);
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {
