@@ -1,17 +1,19 @@
+use crate::data_types::{MealGroup, MealsForDay, SingleMeal};
+
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for write_to_file etc
+use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
-use crate::data_types::{DayMeals, MealGroup, SingleMeal};
+use tokio::time::Instant;
 
-pub async fn build_meal_message(days_forward: i64) -> String {
-    #[cfg(feature = "benchmark")]
-    let now = Instant::now();
-
+pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
+
+    // all nows & .elapsed() are for performance info
+    let now = Instant::now();
 
     // get requested date
     let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
@@ -31,15 +33,13 @@ pub async fn build_meal_message(days_forward: i64) -> String {
             // Any other weekday is fine, nothing to do
         }
     }
-
-    #[cfg(feature = "benchmark")]
-    println!("req setup took: {:.2?}", now.elapsed());
+    log::debug!("determine request date: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals(requested_date).await;
+    let day_meals = get_meals(requested_date, mensa_location).await;
 
     // start message formatting
-    #[cfg(feature = "benchmark")]
+    #[cfg(feature = "parser-cache-info")]
     let now = Instant::now();
 
     // warn if requested "today" was raised to next monday (requested on sat/sun)
@@ -99,55 +99,21 @@ pub async fn build_meal_message(days_forward: i64) -> String {
 
     msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
 
-    #[cfg(feature = "benchmark")]
-    println!("message build took: {:.2?}\n\n", now.elapsed());
-
     // return
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>) -> DayMeals {
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> MealsForDay {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
-    #[cfg(feature = "benchmark")]
-    let now = Instant::now();
 
-    // url parameters
-    let loc = 140;
-    let requested_date_urlfmt = build_req_date_string(requested_date);
-    let url_params = format!("location={}&date={}", loc, requested_date_urlfmt);
+    let url_params = build_url_params(requested_date, mensa_location);
 
     // try to read from cache
-    match File::open(format!("cached_data/{}.json", &url_params)).await {
-        // cached file exists, use that
-        Ok(mut file) => {
-            let mut json_text = String::new();
-            file.read_to_string(&mut json_text).await.unwrap();
-
-            let day_meals: DayMeals = serde_json::from_str(&json_text).unwrap();
-
-            #[cfg(feature = "benchmark")]
-            println!("json deser took: {:.2?}", now.elapsed());
-
-            day_meals
-        }
-        // no cached file, use reqwest
-        Err(_) => {
-            // retrieve HTML
-            let html_text = reqwest_get_html_text(&url_params).await;
-
-            #[cfg(feature = "benchmark")]
-            println!("req return took: {:.2?}", now.elapsed());
-
-            // extract data to struct
-            let day_meals = extract_data_from_html(&html_text, requested_date).await;
-
-            // save struct to cache
-            save_data_to_cache(&html_text, &day_meals, &url_params).await;
-
-            // return struct
-            day_meals
-        }
+    if let Some(day_meals) = json_cache_to_meal(&url_params).await {
+        return day_meals;
+    } else {
+        save_to_cache(requested_date, mensa_location, true).await.1.unwrap()
     }
 }
 
@@ -155,7 +121,7 @@ async fn reqwest_get_html_text(url_params: &String) -> String {
     // requests html from server for chosen url params and returns html_text string
 
     let url_base: String =
-        "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?".to_owned();
+        "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?".to_string();
 
     reqwest::get(url_base + url_params)
         .await
@@ -165,10 +131,7 @@ async fn reqwest_get_html_text(url_params: &String) -> String {
         .unwrap()
 }
 
-async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> DayMeals {
-    #[cfg(feature = "benchmark")]
-    let now = Instant::now();
-
+async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> MealsForDay {
     let mut v_meal_groups: Vec<MealGroup> = Vec::new();
 
     let document = Html::parse_fragment(html_text);
@@ -181,7 +144,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
     let received_date = NaiveDate::parse_from_str(sub, "%d.%m.%Y").unwrap();
 
     if received_date != requested_date.naive_local().date() {
-        return DayMeals {
+        return MealsForDay {
             date: german_date_fmt(requested_date.naive_local().date()),
             meal_groups: v_meal_groups,
         };
@@ -260,48 +223,51 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
             v_meal_groups.push(meal_group);
         }
     }
-    #[cfg(feature = "benchmark")]
-    println!("parsing took: {:.2?}", now.elapsed());
 
-    DayMeals {
+    MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
     }
 }
 
-async fn save_data_to_cache(html_text: &String, day_meals: &DayMeals, url_params: &String) {
+async fn save_update_cache(url_params: &str, json_text: &str) {
+    let now = Instant::now();
     // writes html_text and day_meals struct to cache files
 
     // checks cache dir existence, and creates it if not found
     std::fs::create_dir_all("cached_data/").expect("failed to create data cache dir");
 
-    // saving html content (string comparison is faster than hashing)
-    let mut html_file = File::create(format!("cached_data/{}", &url_params))
-        .await
-        .expect("failed to create a cache file");
-    html_file
-        .write_all(html_text.as_bytes())
-        .await
-        .expect("failed to write received data to cache");
+    // // saving html content (string comparison is faster than hashing)
+    // let mut html_file = File::create(format!("cached_data/{}", &url_params))
+    //     .await
+    //     .expect("failed to create a cache file");
+    // html_file
+    //     .write_all(html_text.as_bytes())
+    //     .await
+    //     .expect("failed to write received data to cache");
 
     let mut json_file = File::create(format!("cached_data/{}.json", &url_params))
         .await
-        .expect("failed to create a json cache file"); //"cached_data/".to_owned() + &url_params).await.expect("failed to create a cache file");
+        .expect("failed to create json cache file");
     json_file
-        .write_all(serde_json::to_string(&day_meals).unwrap().as_bytes())
+        .write_all(json_text.as_bytes())
         .await
-        .expect("failed to write to a json file")
+        .expect("failed to write to a json file");
+
+    log::debug!("saving data to cache: {:.2?}", now.elapsed());
 }
 
-fn build_req_date_string(requested_date: DateTime<Local>) -> String {
+fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> String {
     let (year, month, day) = (
         requested_date.year(),
         requested_date.month(),
         requested_date.day(),
     );
 
-    let out: String = format!("{:04}-{:02}-{:02}", year, month, day);
-    out
+    format!(
+        "location={}&date={:04}-{:02}-{:02}",
+        mensa_location, year, month, day
+    )
 }
 
 fn german_date_fmt(date: NaiveDate) -> String {
@@ -338,115 +304,161 @@ fn escape_markdown_v2(input: &str) -> String {
         .replace("&amp;", "&")
 }
 
-pub async fn prefetch() -> bool {
+pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
+    // returns a vector of mensa locations whose 'today' plan was updated
+    log::debug!("updating cache");
+    return vec![];
+    // let mensen: [u8; 9] = [153, 127, 118, 106, 115, 162, 111, 140, 170];
     // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
-    #[cfg(feature = "benchmark")]
-    let now = Instant::now();
+
+    // days will be selected using this rule:
+    // if current day ... then ...
+
+    //     Thu =>
+    //         'heute' => thursday
+    //         'morgen' => friday
+    //         'uebermorgen' => monday
+
+    //     Fri =>
+    //         'heute' => friday
+    //         'morgen'/'uebermorgen' => monday
+
+    //     Sat =>
+    //         'heute'/'morgen'/'uebermorgen' => monday
+
+    //     Sun =>
+    //         'heute'/'morgen' => monday
+    //         'uebermorgen' => tuesday
+
+    //     Mon/Tue/Wed => as you'd expect
 
     let mut days: Vec<DateTime<Local>> = Vec::new();
-    // ugly hardcoded crap. Unfortunately I think this is the most readable.
-    // push today/tomorrow/tomorrowier to prefetch days, while dancing around Sat/Sun
-    match chrono::Local::now().weekday() {
-        Weekday::Thu => {
-            // date for 'heute' => thursday
-            days.push(chrono::Local::now());
-            // date for 'morgen' => friday
-            days.push(chrono::Local::now() + Duration::days(1));
-            // date for 'uebermorgen' => monday
-            days.push(chrono::Local::now() + Duration::days(4));
-        }
-        Weekday::Fri => {
-            // date for 'heute' => friday
-            days.push(chrono::Local::now());
-            // date for 'morgen'/'uebermorgen' => monday
-            days.push(chrono::Local::now() + Duration::days(3));
-        }
-        Weekday::Sat => {
-            // date for 'heute'/'morgen'/'uebermorgen' => monday
-            days.push(chrono::Local::now() + Duration::days(2));
-        }
-        Weekday::Sun => {
-            // date for 'heute'/'morgen' => monday
-            days.push(chrono::Local::now() + Duration::days(1));
-            // date for 'uebermorgen' => tuesday
-            days.push(chrono::Local::now() + Duration::days(2));
-        }
-        _ => {
-            // Monday/Tuesday/Wednesday behave as you'd expect.
-            days.push(chrono::Local::now());
-            days.push(chrono::Local::now() + Duration::days(1));
-            days.push(chrono::Local::now() + Duration::days(2));
+
+    // get at most 3 days from (inclusive) today, according to the rule above
+    let today = chrono::Local::now();
+
+    for i in 0..3 {
+        let day = today + Duration::days(i);
+
+        if ![Weekday::Sat, Weekday::Sun].contains(&day.weekday()) {
+            days.push(day);
+        // weekend day is not first day (i>0) but within 3 day range, so add monday & break
+        } else if i != 0 {
+            if day.weekday() == Weekday::Sat {
+                days.push(day + Duration::days(2));
+            } else {
+                days.push(day + Duration::days(1));
+            }
+            break;
         }
     }
-
-    #[cfg(feature = "benchmark")]
-    println!("date sel took: {:.2?}\n", now.elapsed());
-
-    let loc = 140;
 
     // add task handles to vec so that they can be awaited after spawing
     let mut handles = Vec::new();
+    let mut mensen_today_changed = Vec::new();
 
-    // spawning task for every day
-    for day in days {
-        // too lazy to do this properly
-
-        handles.push(tokio::spawn(prefetch_for_day(day, loc)))
+    for mensa_id in mensen {
+        // spawning task for every day
+        for day in &days {
+            handles.push(tokio::spawn({
+                save_to_cache(*day, *mensa_id, false)
+            }))
+        }
     }
 
-    let mut today_changed = false;
+    // let mut today_changed = false;
     // awaiting results of every task
     for handle in handles {
-        if handle.await.unwrap() && !today_changed {
-            today_changed = true;
+        if let Some(mensa_id) = handle.await.unwrap().0 {
+            mensen_today_changed.push(mensa_id);
         }
     }
 
-    today_changed
+    mensen_today_changed
 }
 
-async fn prefetch_for_day(day: DateTime<Local>, loc: i32) -> bool {
-    #[cfg(feature = "benchmark")]
-    println!("starting req for {}", day.weekday());
-    #[cfg(feature = "benchmark")]
+// async fn meals_to_json() -> String {
+
+// }
+
+async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
+    match File::open(format!("cached_data/{}.json", &url_params)).await {
+        // cached file exists, use that
+        Ok(mut file) => {
+            let now = Instant::now();
+            let mut json_text = String::new();
+            file.read_to_string(&mut json_text).await.unwrap();
+
+            let day_meals: MealsForDay = serde_json::from_str(&json_text).unwrap();
+            log::debug!("json cache deser: {:.2?}", now.elapsed());
+
+            Some(day_meals)
+        }
+        // no cached file, use reqwest
+        Err(_) => None,
+    }
+}
+
+async fn save_to_cache(
+    day: DateTime<Local>,
+    mensa_id: u8,
+    return_new_data: bool,
+) -> (Option<u8>, Option<MealsForDay>) {
     let now = Instant::now();
 
-    let requested_date_urlfmt = build_req_date_string(day);
-    let url_params = format!("location={}&date={}", loc, requested_date_urlfmt);
-
+    let url_params = build_url_params(day, mensa_id);
     // getting data from server
-    let html_text = reqwest_get_html_text(&url_params).await;
+    let downloaded_html = reqwest_get_html_text(&url_params).await;
+    let downloaded_meals = extract_data_from_html(&downloaded_html, day).await;
+    // serialize downloaded meals
+    let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
 
-    #[cfg(feature = "benchmark")]
-    println!("got {} data after {:.2?}", day.weekday(), now.elapsed());
+    // read (and update) cached json
+    match File::open(format!("cached_data/{}.json", &url_params)).await {
+        Ok(mut json) => {
+            let mut cache_json_text = String::new();
+            json.read_to_string(&mut cache_json_text).await.unwrap();
 
-    match File::open("cached_data/".to_owned() + &url_params).await {
-        // file exists, check if contents match
-        Ok(mut file) => {
-            let mut contents = String::new();
-            file.read_to_string(&mut contents).await.unwrap();
-
-            // cache is outdated -> overwrite
-            if contents != html_text {
-                let day_meals = extract_data_from_html(&html_text, day).await;
-                save_data_to_cache(&html_text, &day_meals, &url_params).await;
-
-                #[cfg(feature = "benchmark")]
-                println!("{}: replaced", day.weekday());
-
-                // cache was updated - return true if "today" was updated
-                day.weekday() == chrono::Local::now().weekday()
+            if downloaded_json_text != cache_json_text {
+                save_update_cache(&url_params, &downloaded_json_text).await;
+                (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None}, Some(downloaded_meals))
             } else {
-                false
+                (None, Some(downloaded_meals))
             }
         }
-        // cache file doesnt exist, create it
         Err(_) => {
-            let day_meals = extract_data_from_html(&html_text, day).await;
-            save_data_to_cache(&html_text, &day_meals, &url_params).await;
-
-            // return true if cache for today was updated
-            day.weekday() == chrono::Local::now().weekday()
+            save_update_cache(&url_params, &downloaded_json_text).await;
+            (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None}, Some(downloaded_meals))
         }
     }
+
+    // let opt_new_data = if return_new_data {
+    //     Some(downloaded_meals)
+    // } else {
+    //     None
+    // };
+
+    // match File::open(format!("cached_data/{}.json", &url_params)).await {
+    //     Ok(mut json) => {
+    //         let mut cache_json_text = String::new();
+    //         json.read_to_string(&mut cache_json_text).await.unwrap();
+
+    //         if downloaded_json_text != cache_json_text {
+    //             save_update_cache(&url_params, &downloaded_json_text).await;
+    //         } else {
+    //             log::debug!("update_cache: cache not updated: {:.2?}", now.elapsed());
+    //         }
+    //     }
+    //     Err(_) => {
+    //         save_update_cache(&url_params, &downloaded_json_text).await;
+    //         // let mut new_json = File::create(format!("cached_data/{}.json", &url_params)).await.unwrap();
+    //         // new_json
+    //         //     .write_all(downloaded_json_text.as_bytes())
+    //         //     .await
+    //         //     .expect("failed to write to a json file");
+    //     }
+    // }
+
+    // return true if "today" was updated
+    // (day.weekday() == chrono::Local::now().weekday(), opt_new_data)
 }
