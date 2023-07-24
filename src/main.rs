@@ -74,7 +74,6 @@ async fn main() {
     let bot_tasksched = bot.clone();
 
     let handler = dptree::entry()
-        .branch(Update::filter_message().filter())
         .branch(Update::filter_message().endpoint(command_handler))
         .branch(Update::filter_callback_query().endpoint(callback_handler));
 
