@@ -691,7 +691,13 @@ async fn init_task_scheduler(
 
                 if let Some(previous_registration) =
                     loaded_user_data.get(&job_handler_task.chat_id.unwrap())
-                {
+                {   
+                    let mensa_id = if job_handler_task.mensa_id.is_some() {
+                        job_handler_task.mensa_id.unwrap()
+                    } else {
+                        previous_registration.1
+                    };
+
                     let new_uuid =
                         if job_handler_task.hour.is_some() || job_handler_task.minute.is_some() {
                             if let Some(uuid) = previous_registration.0 {
@@ -699,17 +705,15 @@ async fn init_task_scheduler(
                                 sched.context.job_delete_tx.send(uuid).unwrap();
                             }
                             // load new job, return uuid
-                            load_job(bot.clone(), &sched, job_handler_task.clone()).await
+                            let mut new_task = job_handler_task.clone();
+                            new_task.mensa_id = Some(mensa_id);
+                            load_job(bot.clone(), &sched, new_task).await
                         } else {
                             // no new time was set -> return old job uuid
                             previous_registration.0
                         };
 
-                    let mensa_id = if job_handler_task.mensa_id.is_some() {
-                        job_handler_task.mensa_id.unwrap()
-                    } else {
-                        previous_registration.1
-                    };
+                    
 
                     loaded_user_data.insert(
                         job_handler_task.chat_id.unwrap(),
