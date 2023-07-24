@@ -1,5 +1,5 @@
 [package]
-name = "stuwe-telegram-beta"
+name = "beta-telegram-rs"
 version = "1.0.0"
 edition = "2021"
 

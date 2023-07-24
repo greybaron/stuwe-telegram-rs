@@ -100,6 +100,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "604178f6c5c21f02dc555784810edfb88d34ac2c73b2eae109655649ee73ce3d"
 
 [[package]]
+name = "beta-telegram-rs"
+version = "1.0.0"
+dependencies = [
+ "chrono",
+ "hashmap",
+ "lazy_static",
+ "log",
+ "pretty_env_logger",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "scraper",
+ "selectors",
+ "serde",
+ "serde_json",
+ "teloxide",
+ "thiserror",
+ "tokio",
+ "tokio-cron-scheduler",
+ "uuid",
+]
+
+[[package]]
 name = "bitflags"
 version = "1.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1613,29 +1636,6 @@ name = "strsim"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "stuwe-telegram-beta"
-version = "1.0.0"
-dependencies = [
- "chrono",
- "hashmap",
- "lazy_static",
- "log",
- "pretty_env_logger",
- "regex",
- "reqwest",
- "rusqlite",
- "scraper",
- "selectors",
- "serde",
- "serde_json",
- "teloxide",
- "thiserror",
- "tokio",
- "tokio-cron-scheduler",
- "uuid",
-]
 
 [[package]]
 name = "syn"
