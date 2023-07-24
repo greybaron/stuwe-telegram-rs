@@ -1638,6 +1638,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
 
 [[package]]
+name = "stuwe-telegram-rs"
+version = "1.1.0"
+dependencies = [
+ "chrono",
+ "hashmap",
+ "lazy_static",
+ "log",
+ "pretty_env_logger",
+ "rand",
+ "regex",
+ "reqwest",
+ "rusqlite",
+ "scraper",
+ "selectors",
+ "serde",
+ "serde_json",
+ "teloxide",
+ "thiserror",
+ "tokio",
+ "tokio-cron-scheduler",
+ "uuid",
+]
+
+[[package]]
 name = "syn"
 version = "1.0.109"
 source = "registry+https://github.com/rust-lang/crates.io-index"

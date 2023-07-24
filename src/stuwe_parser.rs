@@ -1,6 +1,7 @@
 use crate::data_types::{nMealGroup, MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
+use rand::Rng;
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
@@ -70,7 +71,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
             // Any other weekday is fine, nothing to do
         }
     }
-    log::debug!("determine request date: {:.2?}", now.elapsed());
+    log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
     let day_meals = get_meals(requested_date, mensa_location).await;
@@ -88,11 +89,14 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         None
     };
 
-    // insert date + potential future day warning
+    let emojis = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "🍽️", "☝🏻", "🌤️"];
+    let rand_emoji = emojis[rand::thread_rng().gen_range(0..emojis.len())];
     msg += &format!(
-        "{}{}\n",
+        "{} {}{} {}\n",
+        rand_emoji,
         markdown::italic(&f_date),
-        future_day_info.unwrap_or_default()
+        future_day_info.unwrap_or_default(),
+        rand_emoji
     );
 
     match day_meals {
@@ -153,9 +157,6 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         }
     }
 
-    msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
-
-    // return
     escape_markdown_v2(&msg)
 }
 
@@ -292,7 +293,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
         }
     }
 
-    log::debug!("parsing html: {:.2?}", now.elapsed());
+    log::debug!("HTML → Data: {:.2?}", now.elapsed());
     MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
