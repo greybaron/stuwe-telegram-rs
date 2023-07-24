@@ -217,7 +217,7 @@ async fn command_handler(
                 registration_tx.send(make_query_data(msg.chat.id.0)).unwrap();
 
                 if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    bot.send_message(msg.chat.id, build_meal_message(1, registration.1).await)
+                    bot.send_message(msg.chat.id, build_meal_message(2, registration.1).await)
                         .parse_mode(ParseMode::MarkdownV2)
                         .await?;
 
