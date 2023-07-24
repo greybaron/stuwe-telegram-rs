@@ -135,7 +135,7 @@ async fn callback_handler(
                 bot.edit_message_text(chat.id, id, Command::descriptions().to_string() + subtext)
                 .await?;
 
-                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /uhrzeit \\[Zeit\\]", markdown::bold(&mensa_name)))
+                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /mensa, bzw.\n/uhrzeit \\[Zeit\\]", markdown::bold(&mensa_name)))
                 .parse_mode(ParseMode::MarkdownV2).await?;
 
                 JobHandlerTask {
