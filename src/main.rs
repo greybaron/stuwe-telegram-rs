@@ -23,8 +23,6 @@ extern crate lazy_static;
 
 #[tokio::main]
 async fn main() {
-    build_meal_message(0, 140).await;
-    return;
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .filter_module(

@@ -68,89 +68,88 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
 
     // retrieve meals
     let day_meals = get_meals(requested_date, mensa_location).await;
+    let f_date = german_date_fmt(requested_date.date_naive());
 
-    "todo".to_string()
 
-    // // start message formatting
-    // #[cfg(feature = "parser-cache-info")]
-    // let now = Instant::now();
+    // start message formatting
+    let now = Instant::now();
 
-    // // warn if requested "today" was raised to next monday (requested on sat/sun)
-    // let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
-    //     Some(" (Morgen)")
-    // } else if days_forward == 0 && date_raised_by_days == 2 {
-    //     Some(" (Übermorgen)")
-    // } else {
-    //     None
-    // };
+    // warn if requested "today" was raised to next monday (requested on sat/sun)
+    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
+        Some(" (Morgen)")
+    } else if days_forward == 0 && date_raised_by_days == 2 {
+        Some(" (Übermorgen)")
+    } else {
+        None
+    };
 
-    // // insert date + potential future day warning
-    // msg += &format!(
-    //     "{}{}\n",
-    //     markdown::italic(&day_meals.date),
-    //     future_day_info.unwrap_or_default()
-    // );
+    // insert date + potential future day warning
+    msg += &format!(
+        "{}{}\n",
+        markdown::italic(&f_date),
+        future_day_info.unwrap_or_default()
+    );
 
-    // if day_meals.meal_groups.is_empty() {
-    //     msg += &markdown::bold("\nkeine Daten vorhanden.\n");
-    // }
+    if day_meals.is_empty() {
+        msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+    }
 
-    // // loop over meal groups
-    // for meal_group in day_meals.meal_groups {
-    //     let mut price_is_shared = true;
-    //     let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
+    // loop over meal groups
+    for meal_group in day_meals {
+        // let mut price_is_shared = true;
+        // let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
 
-    //     for sub_meal in &meal_group.sub_meals {
-    //         if &sub_meal.price != price_first_submeal {
-    //             price_is_shared = false;
-    //             break;
-    //         }
-    //     }
+        // for sub_meal in &meal_group.sub_meals {
+        //     if &sub_meal.price != price_first_submeal {
+        //         price_is_shared = false;
+        //         break;
+        //     }
+        // }
 
-    //     // Bold type of meal (-group)
-    //     msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
+        // Bold type of meal (-group)
+        let sub_ingredients = &meal_group.description.split('&').map(|x| x.trim()).collect::<Vec<&str>>();
+        msg += &format!("\n{}\n", markdown::bold(&meal_group.category));
+        msg += &format!(" • {}\n", markdown::underline(&meal_group.name));
+        for ingr in sub_ingredients {
+            msg += &format!("     + {}\n", markdown::italic(ingr));
+        }
+        msg += &format!("   {}\n", &meal_group.price);
+        
+        // loop over meals in meal group
+        // for sub_meal in &meal_group.sub_meals {
+        //     // underlined single or multiple meal name
+        //     msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
 
-    //     // loop over meals in meal group
-    //     for sub_meal in &meal_group.sub_meals {
-    //         // underlined single or multiple meal name
-    //         msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+        //     // loop over ingredients of meal
+        //     for ingredient in &sub_meal.additional_ingredients {
+        //         // appending ingredient to msg
+        //         msg += &format!("     + {}\n", markdown::italic(ingredient))
+        //     }
+        //     // appending price
 
-    //         // loop over ingredients of meal
-    //         for ingredient in &sub_meal.additional_ingredients {
-    //             // appending ingredient to msg
-    //             msg += &format!("     + {}\n", markdown::italic(ingredient))
-    //         }
-    //         // appending price
-    //         if !price_is_shared {
-    //             msg += &format!("   {}\n", sub_meal.price);
-    //         }
-    //     }
-    //     if price_is_shared {
-    //         msg += &format!("   {}\n", price_first_submeal);
-    //     }
-    // }
+        //     msg += &format!("   {}\n", sub_meal.price);
 
-    // msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
+        // }
+    }
 
-    // // return
-    // escape_markdown_v2(&msg)
+    msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
+
+    // return
+    escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> nMealGroup {
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Vec<nMealGroup> {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
 
-    let (date, mensa) = build_url_params(requested_date, mensa_location);
+    // let (date, mensa) = build_url_params(requested_date, mensa_location);
     let mm_json = mm_json_request(requested_date, mensa_location).await.unwrap();
 
-    // write mm_json to file
-    let mut file = File::create("mm_json.json").await.unwrap();
-    file.write_all(mm_json.as_bytes()).await.unwrap();
+    // // write mm_json to file
+    // let mut file = File::create("mm_json.json").await.unwrap();
+    // file.write_all(mm_json.as_bytes()).await.unwrap();
 
-    let vday_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
-    println!("holy shit");
-    let day_meal_groups: nMealGroup = serde_json::from_str(&mm_json).unwrap();
-    println!("{:#?}", day_meal_groups);
+    let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
 
     // serde::Deserialize::deserialize(&mm_json).unwrap();
     // let downloaded_meals = extract_data_from_html(&mm_json, day).await;

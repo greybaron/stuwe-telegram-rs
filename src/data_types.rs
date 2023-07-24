@@ -56,15 +56,15 @@ pub struct SingleMeal {
 #[derive(Serialize, Deserialize, Debug)]
 
 pub struct nMealGroup {
-    id: u64,
-    name: String,
-    description: String,
-    price: String,
-    category: String,
-    serving_date: String,
-    additional_info: String,
-    allergens: String,
-    additives: String,
-    rating: f32,
-    votes: u64
+    pub id: u64,
+    pub name: String,
+    pub description: String,
+    pub price: String,
+    pub category: String,
+    pub servingDate: String,
+    pub additionalInfo: String,
+    pub allergens: String,
+    pub additives: String,
+    pub rating: f32,
+    pub votes: u64
 }
