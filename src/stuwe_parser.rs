@@ -145,7 +145,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
                     }
 
                     if price_is_shared {
-                        msg += &format!("  {}\n", &meal.price);
+                        msg += &format!("  {}\n", first_price);
                     }
                 }
             }
