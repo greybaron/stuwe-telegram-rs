@@ -193,11 +193,15 @@ async fn command_handler(
                 registration_tx.send(make_query_data(msg.chat.id.0)).unwrap();
 
                 if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    bot.send_message(msg.chat.id, build_meal_message(0, registration.1).await)
+                    let text = build_meal_message(0, registration.1).await;
+                    log::debug!("Build Heute msg: {:.2?}", now.elapsed());
+                    let now = Instant::now();
+                    bot.send_message(msg.chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .await?;
+                    log::debug!("Send heute msg: {:.2?}", now.elapsed());
 
-                    log::debug!("generating Heute msg took: {:.2?}", now.elapsed());
+                    
                 } else {
                     // every user has a registration (starting the chat always calls /start)
                     // if this is none, it most likely means the DB was wiped)
@@ -212,13 +216,17 @@ async fn command_handler(
                 registration_tx.send(make_query_data(msg.chat.id.0)).unwrap();
 
                 if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    bot.send_message(msg.chat.id, build_meal_message(1, registration.1).await)
+                    let text = build_meal_message(1, registration.1).await;
+                    log::debug!("Build Morgen msg: {:.2?}", now.elapsed());
+                    let now = Instant::now();
+                    bot.send_message(msg.chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .await?;
+                    log::debug!("Send Morgen msg: {:.2?}", now.elapsed());
 
-                    log::debug!("generating Morgen msg took: {:.2?}", now.elapsed());
+                    
                 } else {
-                    bot.send_message(msg.chat.id, "NO_DB_MSG")
+                    bot.send_message(msg.chat.id, NO_DB_MSG)
                         .await?;
                 }
             }
@@ -227,13 +235,17 @@ async fn command_handler(
                 registration_tx.send(make_query_data(msg.chat.id.0)).unwrap();
 
                 if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    bot.send_message(msg.chat.id, build_meal_message(2, registration.1).await)
+                    let text = build_meal_message(2, registration.1).await;
+                    log::debug!("Build Übermorgen msg: {:.2?}", now.elapsed());
+                    let now = Instant::now();
+                    bot.send_message(msg.chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .await?;
+                    log::debug!("Send Übermorgen msg: {:.2?}", now.elapsed());
 
-                    log::debug!("generating Morgen msg took: {:.2?}", now.elapsed());
+                    
                 } else {
-                    bot.send_message(msg.chat.id, "Bitte zuerst /start ausführen")
+                    bot.send_message(msg.chat.id, NO_DB_MSG)
                         .await?;
                 }
             }
