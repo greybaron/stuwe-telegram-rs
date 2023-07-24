@@ -74,6 +74,7 @@ async fn main() {
     let bot_tasksched = bot.clone();
 
     let handler = dptree::entry()
+        .branch(Update::filter_message().filter())
         .branch(Update::filter_message().endpoint(command_handler))
         .branch(Update::filter_callback_query().endpoint(callback_handler));
 
@@ -136,7 +137,7 @@ async fn callback_handler(
                 bot.edit_message_text(chat.id, id, Command::descriptions().to_string() + subtext)
                 .await?;
 
-                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /Uhrzeit [Zeit]", markdown::bold(&mensa_name)))
+                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /uhrzeit [Zeit]", markdown::bold(&mensa_name)))
                 .parse_mode(ParseMode::MarkdownV2).await?;
 
                 JobHandlerTask {
@@ -262,7 +263,7 @@ async fn command_handler(
                 else {
                     bot.send_message(
                         msg.chat.id,
-                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /Uhrzeit [Zeit]",
+                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /uhrzeit [Zeit]",
                     )
                     .await?;
 
@@ -331,7 +332,7 @@ async fn command_handler(
                             registration_tx.send(registration_job).unwrap();
                         }
                         Err(TimeParseError::NoTimePassed) => {
-                            bot.send_message(msg.chat.id, "Bitte Zeit angeben\n/Uhrzeit [Zeit]")
+                            bot.send_message(msg.chat.id, "Bitte Zeit angeben\n/uhrzeit [Zeit]")
                                 .await?;
                         }
                         Err(TimeParseError::InvalidTimePassed) => {
@@ -513,7 +514,7 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> Optio
             Box::pin(async move {
                 bot.send_message(
                     ChatId(task.chat_id.unwrap()),
-                    build_meal_message(0, 140).await,
+                    build_meal_message(0, task.mensa_id.unwrap()).await,
                 )
                 .parse_mode(ParseMode::MarkdownV2)
                 .await
@@ -694,7 +695,7 @@ async fn init_task_scheduler(
                                 format!(
                                     "{}\n{}",
                                     &markdown::bold(&markdown::underline("Planänderung:")),
-                                    build_meal_message(0, 140).await
+                                    build_meal_message(0, mensa_id).await
                                 ),
                             )
                             .parse_mode(ParseMode::MarkdownV2)
