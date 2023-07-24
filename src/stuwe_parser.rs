@@ -145,9 +145,9 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Vec<n
     // let (date, mensa) = build_url_params(requested_date, mensa_location);
     let mm_json = mm_json_request(requested_date, mensa_location).await.unwrap();
 
-    // // write mm_json to file
-    let mut file = File::create("mm_json.json").await.unwrap();
-    file.write_all(mm_json.as_bytes()).await.unwrap();
+    // // // // write mm_json to file
+    // // let mut file = File::create("mm_json.json").await.unwrap();
+    // // file.write_all(mm_json.as_bytes()).await.unwrap();
 
     let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
 
@@ -449,7 +449,6 @@ async fn mm_json_request(
     // let downloaded_html = reqwest_get_html_text(&url_params).await;
     let mm_json = get_mensimates_json(&date, &mensa).await;
     log::debug!("got MM json after {:.2?}", req_now.elapsed());
-    println!("mm_json: {:?}", mm_json);
 
     Some(mm_json)
 
