@@ -109,7 +109,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
                     if let Some(cat) = structured_day_meals.get_mut(&meal.category) {
                         cat.push(meal);
                     } else {
-                        structured_day_meals.insert(meal.name.clone(), vec![meal]);
+                        structured_day_meals.insert(meal.category.clone(), vec![meal]);
                     }
                 }
 
