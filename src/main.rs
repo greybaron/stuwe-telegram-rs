@@ -1,7 +1,7 @@
 mod data_types;
 use data_types::{JobHandlerTask, JobType, RegistrationEntry, TimeParseError};
 mod stuwe_parser;
-use stuwe_parser::{build_meal_message, update_cache};
+use stuwe_parser::{build_meal_message};
 
 
 use chrono::Timelike;
@@ -23,6 +23,8 @@ extern crate lazy_static;
 
 #[tokio::main]
 async fn main() {
+    build_meal_message(0, 140).await;
+    return;
     pretty_env_logger::formatted_builder()
         .filter_level(log::LevelFilter::Info)
         .filter_module(
@@ -540,39 +542,33 @@ async fn init_task_scheduler(
     let tasks_from_db = get_all_tasks_db();
     let sched = JobScheduler::new().await.unwrap();
 
-    let mensen_ids = mensen.values().copied().collect();
+    let mensen_ids: Vec<u8> = mensen.values().copied().collect();
 
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    // always update cache on startup
-    update_cache(&mensen_ids).await;
+    // // run cache update every 5 minutes
+    // let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
+    //     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
+    //     let registration_tx = registration_tx.clone();
+    //     let mensen_ids = mensen_ids.clone();
 
-    // run cache update every 5 minutes
-    let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
-        log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
+    //     Box::pin(async move {
+    //         let today_changed_mensen = update_cache(&mensen_ids).await;
 
-        let registration_tx = registration_tx.clone();
-        let mensen_ids = mensen_ids.clone();
-
-        Box::pin(async move {
-            let today_changed_mensen = update_cache(&mensen_ids).await;
-
-            for mensa in today_changed_mensen {
-                registration_tx
-                    .send(JobHandlerTask {
-                        job_type: JobType::BroadcastUpdate,
-                        chat_id: None,
-                        mensa_id: Some(mensa),
-                        hour: None,
-                        minute: None,
-                    })
-                    .unwrap();
-            }
-        })
-    })
-    .unwrap();
-    sched.add(cache_and_broadcast_job).await.unwrap();
+    //         for mensa in today_changed_mensen {
+    //             registration_tx
+    //                 .send(JobHandlerTask {
+    //                     job_type: JobType::BroadcastUpdate,
+    //                     chat_id: None,
+    //                     mensa_id: Some(mensa),
+    //                     hour: None,
+    //                     minute: None,
+    //                 })
+    //                 .unwrap();
+    //         }
+    //     })
+    // })
+    // .unwrap();
+    // sched.add(cache_and_broadcast_job).await.unwrap();
 
     for task in tasks_from_db {
         let bot = bot.clone();

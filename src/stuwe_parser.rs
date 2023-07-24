@@ -1,4 +1,4 @@
-use crate::data_types::{MealGroup, MealsForDay, SingleMeal};
+use crate::data_types::{MealGroup, MealsForDay, nMealGroup, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use scraper::{Html, Selector};
@@ -7,7 +7,38 @@ use teloxide::utils::markdown;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
-use tokio::time::Instant;
+use std::{collections::HashMap, time::Instant};
+
+async fn get_mensimates_json(date: &str, mensa: &str) -> String {
+    let mut map = HashMap::new();
+
+    map.insert("apiUsername", "apiuser_telegram");
+    map.insert("password", "telegrambesser");
+
+    let client = reqwest::Client::new();
+    let login_resp = client
+        .post("https://api.olech2412.de/mensaHub/auth/login")
+        .json(&map)
+        .send()
+        .await
+        .unwrap();
+
+    let token = login_resp.text().await.unwrap();
+
+    let now = Instant::now();
+
+    let response = client
+        .get(format!("https://api.olech2412.de/mensaHub/{}/servingDate/{}", mensa, date))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    let txt = response.text().await.unwrap();
+    // write string to file
+    
+    txt
+    // response.text().await.unwrap()
+}
 
 pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
@@ -38,83 +69,95 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     // retrieve meals
     let day_meals = get_meals(requested_date, mensa_location).await;
 
-    // start message formatting
-    #[cfg(feature = "parser-cache-info")]
-    let now = Instant::now();
+    "todo".to_string()
 
-    // warn if requested "today" was raised to next monday (requested on sat/sun)
-    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
-        Some(" (Morgen)")
-    } else if days_forward == 0 && date_raised_by_days == 2 {
-        Some(" (Übermorgen)")
-    } else {
-        None
-    };
+    // // start message formatting
+    // #[cfg(feature = "parser-cache-info")]
+    // let now = Instant::now();
 
-    // insert date + potential future day warning
-    msg += &format!(
-        "{}{}\n",
-        markdown::italic(&day_meals.date),
-        future_day_info.unwrap_or_default()
-    );
+    // // warn if requested "today" was raised to next monday (requested on sat/sun)
+    // let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
+    //     Some(" (Morgen)")
+    // } else if days_forward == 0 && date_raised_by_days == 2 {
+    //     Some(" (Übermorgen)")
+    // } else {
+    //     None
+    // };
 
-    if day_meals.meal_groups.is_empty() {
-        msg += &markdown::bold("\nkeine Daten vorhanden.\n");
-    }
+    // // insert date + potential future day warning
+    // msg += &format!(
+    //     "{}{}\n",
+    //     markdown::italic(&day_meals.date),
+    //     future_day_info.unwrap_or_default()
+    // );
 
-    // loop over meal groups
-    for meal_group in day_meals.meal_groups {
-        let mut price_is_shared = true;
-        let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
+    // if day_meals.meal_groups.is_empty() {
+    //     msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+    // }
 
-        for sub_meal in &meal_group.sub_meals {
-            if &sub_meal.price != price_first_submeal {
-                price_is_shared = false;
-                break;
-            }
-        }
+    // // loop over meal groups
+    // for meal_group in day_meals.meal_groups {
+    //     let mut price_is_shared = true;
+    //     let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
 
-        // Bold type of meal (-group)
-        msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
+    //     for sub_meal in &meal_group.sub_meals {
+    //         if &sub_meal.price != price_first_submeal {
+    //             price_is_shared = false;
+    //             break;
+    //         }
+    //     }
 
-        // loop over meals in meal group
-        for sub_meal in &meal_group.sub_meals {
-            // underlined single or multiple meal name
-            msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+    //     // Bold type of meal (-group)
+    //     msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
 
-            // loop over ingredients of meal
-            for ingredient in &sub_meal.additional_ingredients {
-                // appending ingredient to msg
-                msg += &format!("     + {}\n", markdown::italic(ingredient))
-            }
-            // appending price
-            if !price_is_shared {
-                msg += &format!("   {}\n", sub_meal.price);
-            }
-        }
-        if price_is_shared {
-            msg += &format!("   {}\n", price_first_submeal);
-        }
-    }
+    //     // loop over meals in meal group
+    //     for sub_meal in &meal_group.sub_meals {
+    //         // underlined single or multiple meal name
+    //         msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
 
-    msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
+    //         // loop over ingredients of meal
+    //         for ingredient in &sub_meal.additional_ingredients {
+    //             // appending ingredient to msg
+    //             msg += &format!("     + {}\n", markdown::italic(ingredient))
+    //         }
+    //         // appending price
+    //         if !price_is_shared {
+    //             msg += &format!("   {}\n", sub_meal.price);
+    //         }
+    //     }
+    //     if price_is_shared {
+    //         msg += &format!("   {}\n", price_first_submeal);
+    //     }
+    // }
 
-    // return
-    escape_markdown_v2(&msg)
+    // msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
+
+    // // return
+    // escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> MealsForDay {
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> nMealGroup {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
 
-    let url_params = build_url_params(requested_date, mensa_location);
+    let (date, mensa) = build_url_params(requested_date, mensa_location);
+    let mm_json = mm_json_request(requested_date, mensa_location).await.unwrap();
 
-    // try to read from cache
-    if let Some(day_meals) = json_cache_to_meal(&url_params).await {
-        day_meals
-    } else {
-        save_to_cache(requested_date, mensa_location).await.1.unwrap()
-    }
+    // write mm_json to file
+    let mut file = File::create("mm_json.json").await.unwrap();
+    file.write_all(mm_json.as_bytes()).await.unwrap();
+
+    let vday_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
+    println!("holy shit");
+    let day_meal_groups: nMealGroup = serde_json::from_str(&mm_json).unwrap();
+    println!("{:#?}", day_meal_groups);
+
+    // serde::Deserialize::deserialize(&mm_json).unwrap();
+    // let downloaded_meals = extract_data_from_html(&mm_json, day).await;
+    // serialize downloaded meals
+    // let downloadked_json_text = serde_json::to_string(&downloaded_meals).unwrap();´
+    
+    day_meal_groups
 }
 
 async fn reqwest_get_html_text(url_params: &String) -> String {
@@ -245,17 +288,29 @@ async fn save_update_cache(url_params: &str, json_text: &str) {
         .expect("failed to write to a json file");
 }
 
-fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> String {
+fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (String, String) {
     let (year, month, day) = (
         requested_date.year(),
         requested_date.month(),
         requested_date.day(),
     );
 
-    format!(
-        "location={}&date={:04}-{:02}-{:02}",
-        mensa_location, year, month, day
-    )
+    let mensen: HashMap<u8, &str> = HashMap::from([
+        (153, "cafeteria_dittrichring"),
+        (127, "menseria_am_botanischen_garten"),
+        (118, "mensa_academica"),
+        (106, "mensa_am_park"),
+        (115, "mensa_am_elsterbecken"),
+        (162, "mensa_am_medizincampus"),
+        (111, "mensa_peterssteinweg"),
+        (140, "mensa_schoenauerstr"),
+        (170, "mensa_tierklinik"),
+    ]);
+
+    let date = format!("{:04}-{:02}-{:02}", year, month, day);
+    let mensa = mensen.get(&mensa_location).unwrap().to_string();
+
+    (date, mensa)
 }
 
 fn german_date_fmt(date: NaiveDate) -> String {
@@ -292,135 +347,138 @@ fn escape_markdown_v2(input: &str) -> String {
         .replace("&amp;", "&")
 }
 
-pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
-    // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
-    // returns a vector of mensa locations whose 'today' plan was updated
+// pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
+//     // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
+//     // returns a vector of mensa locations whose 'today' plan was updated
 
-    // days will be selected using this rule:
-    // if current day ... then ...
+//     // days will be selected using this rule:
+//     // if current day ... then ...
 
-    //     Thu =>
-    //         'heute' => thursday
-    //         'morgen' => friday
-    //         'uebermorgen' => monday
+//     //     Thu =>
+//     //         'heute' => thursday
+//     //         'morgen' => friday
+//     //         'uebermorgen' => monday
 
-    //     Fri =>
-    //         'heute' => friday
-    //         'morgen'/'uebermorgen' => monday
+//     //     Fri =>
+//     //         'heute' => friday
+//     //         'morgen'/'uebermorgen' => monday
 
-    //     Sat =>
-    //         'heute'/'morgen'/'uebermorgen' => monday
+//     //     Sat =>
+//     //         'heute'/'morgen'/'uebermorgen' => monday
 
-    //     Sun =>
-    //         'heute'/'morgen' => monday
-    //         'uebermorgen' => tuesday
+//     //     Sun =>
+//     //         'heute'/'morgen' => monday
+//     //         'uebermorgen' => tuesday
 
-    //     Mon/Tue/Wed => as you'd expect
+//     //     Mon/Tue/Wed => as you'd expect
 
-    let mut days: Vec<DateTime<Local>> = Vec::new();
+//     let mut days: Vec<DateTime<Local>> = Vec::new();
 
-    // get at most 3 days from (inclusive) today, according to the rule above
-    let today = chrono::Local::now();
+//     // get at most 3 days from (inclusive) today, according to the rule above
+//     let today = chrono::Local::now();
 
-    for i in 0..3 {
-        let day = today + Duration::days(i);
+//     for i in 0..3 {
+//         let day = today + Duration::days(i);
 
-        if ![Weekday::Sat, Weekday::Sun].contains(&day.weekday()) {
-            days.push(day);
-        // weekend day is not first day (i>0) but within 3 day range, so add monday & break
-        } else if i != 0 {
-            if day.weekday() == Weekday::Sat {
-                days.push(day + Duration::days(2));
-            } else {
-                days.push(day + Duration::days(1));
-            }
-            break;
-        }
-    }
+//         if ![Weekday::Sat, Weekday::Sun].contains(&day.weekday()) {
+//             days.push(day);
+//         // weekend day is not first day (i>0) but within 3 day range, so add monday & break
+//         } else if i != 0 {
+//             if day.weekday() == Weekday::Sat {
+//                 days.push(day + Duration::days(2));
+//             } else {
+//                 days.push(day + Duration::days(1));
+//             }
+//             break;
+//         }
+//     }
 
-    // add task handles to vec so that they can be awaited after spawing
-    let mut handles = Vec::new();
-    let mut mensen_today_changed = Vec::new();
+//     // add task handles to vec so that they can be awaited after spawing
+//     let mut handles = Vec::new();
+//     let mut mensen_today_changed = Vec::new();
 
-    for mensa_id in mensen {
-        // spawning task for every day
-        for day in &days {
-            handles.push(tokio::spawn({
-                save_to_cache(*day, *mensa_id)
-            }))
-        }
-    }
+//     for mensa_id in mensen {
+//         // spawning task for every day
+//         for day in &days {
+//             handles.push(tokio::spawn({
+//                 mm_json_request(*day, *mensa_id)
+//             }))
+//         }
+//     }
 
-    // let mut today_changed = false;
-    // awaiting results of every task
-    for handle in handles {
-        if let Some(mensa_id) = handle.await.unwrap().0 {
-            mensen_today_changed.push(mensa_id);
-        }
-    }
+//     // let mut today_changed = false;
+//     // awaiting results of every task
+//     for handle in handles {
+//         if let Some(mensa_id) = handle.await.unwrap().0 {
+//             mensen_today_changed.push(mensa_id);
+//         }
+//     }
 
-    mensen_today_changed
-}
+//     mensen_today_changed
+// }
 
 // async fn meals_to_json() -> String {
 
 // }
 
-async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
-    match File::open(format!("cached_data/{}.json", &url_params)).await {
-        // cached file exists, use that
-        Ok(mut file) => {
-            let now = Instant::now();
-            let mut json_text = String::new();
-            file.read_to_string(&mut json_text).await.unwrap();
+// async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
+//     match File::open(format!("cached_data/{}.json", &url_params)).await {
+//         // cached file exists, use that
+//         Ok(mut file) => {
+//             let now = Instant::now();
+//             let mut json_text = String::new();
+//             file.read_to_string(&mut json_text).await.unwrap();
 
-            let day_meals: MealsForDay = serde_json::from_str(&json_text).unwrap();
-            log::debug!("json cache deser: {:.2?}", now.elapsed());
+//             let day_meals: MealsForDay = serde_json::from_str(&json_text).unwrap();
+//             log::debug!("json cache deser: {:.2?}", now.elapsed());
 
-            Some(day_meals)
-        }
-        // no cached file, use reqwest
-        Err(_) => None,
-    }
-}
+//             Some(day_meals)
+//         }
+//         // no cached file, use reqwest
+//         Err(_) => None,
+//     }
+// }
 
-async fn save_to_cache(
+async fn mm_json_request(
     day: DateTime<Local>,
     mensa_id: u8,
-) -> (Option<u8>, Option<MealsForDay>) {
-    let url_params = build_url_params(day, mensa_id);
+) -> Option<String> {
+    let (date, mensa) = build_url_params(day, mensa_id);
     
     // getting data from server
     let req_now = Instant::now();
-    let downloaded_html = reqwest_get_html_text(&url_params).await;
-    log::debug!("got html after {:.2?}", req_now.elapsed());
+    // let downloaded_html = reqwest_get_html_text(&url_params).await;
+    let mm_json = get_mensimates_json(&date, &mensa).await;
+    log::debug!("got MM json after {:.2?}", req_now.elapsed());
+    println!("mm_json: {:?}", mm_json);
 
-    let downloaded_meals = extract_data_from_html(&downloaded_html, day).await;
-    // serialize downloaded meals
-    let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
+    Some(mm_json)
+
+    
+    
 
     // read (and update) cached json
-     match File::open(format!("cached_data/{}.json", &url_params)).await {
-        Ok(mut json) => {
-            let mut cache_json_text = String::new();
-            json.read_to_string(&mut cache_json_text).await.unwrap();
+    //  match File::open(format!("cached_data/{}.json", &url_params)).await {
+    //     Ok(mut json) => {
+    //         let mut cache_json_text = String::new();
+    //         json.read_to_string(&mut cache_json_text).await.unwrap();
 
-            // cache was updated, return mensa_id if 'today' was updated
-            // return new data if requested
-            if downloaded_json_text != cache_json_text {
-                save_update_cache(&url_params, &downloaded_json_text).await;
-                (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
-                Some(downloaded_meals))
-            } else {
-                (None, Some(downloaded_meals))
-            }
-        }
-        Err(_) => {
-            save_update_cache(&url_params, &downloaded_json_text).await;
-            (
-                if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
-                Some(downloaded_meals)
-            )
-        }
-    }
+    //         // cache was updated, return mensa_id if 'today' was updated
+    //         // return new data if requested
+    //         if downloaded_json_text != cache_json_text {
+    //             save_update_cache(&url_params, &downloaded_json_text).await;
+    //             (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
+    //             Some(downloaded_meals))
+    //         } else {
+    //             (None, Some(downloaded_meals))
+    //         }
+    //     }
+    //     Err(_) => {
+    //         save_update_cache(&url_params, &downloaded_json_text).await;
+    //         (
+    //             if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
+    //             Some(downloaded_meals)
+    //         )
+    //     }
+    // }
 }

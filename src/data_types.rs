@@ -51,3 +51,20 @@ pub struct SingleMeal {
     pub additional_ingredients: Vec<String>,
     pub price: String,
 }
+
+
+#[derive(Serialize, Deserialize, Debug)]
+
+pub struct nMealGroup {
+    id: u64,
+    name: String,
+    description: String,
+    price: String,
+    category: String,
+    serving_date: String,
+    additional_info: String,
+    allergens: String,
+    additives: String,
+    rating: f32,
+    votes: u64
+}
