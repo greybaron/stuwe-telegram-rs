@@ -53,7 +53,7 @@ pub struct SingleMeal {
 }
 
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 
 pub struct nMealGroup {
     pub id: u64,

@@ -1,4 +1,4 @@
-use crate::data_types::{MealGroup, MealsForDay, nMealGroup, SingleMeal};
+use crate::data_types::{nMealGroup, MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use scraper::{Html, Selector};
@@ -9,7 +9,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
 use std::{collections::HashMap, time::Instant};
 
-async fn get_mensimates_json(date: &str, mensa: &str) -> String {
+async fn get_mensimates_json(date: &str, mensa: &str) -> Option<String> {
     let mut map = HashMap::new();
 
     map.insert("apiUsername", "apiuser_telegram");
@@ -20,23 +20,31 @@ async fn get_mensimates_json(date: &str, mensa: &str) -> String {
         .post("https://api.olech2412.de/mensaHub/auth/login")
         .json(&map)
         .send()
-        .await
-        .unwrap();
+        .await;
 
-    let token = login_resp.text().await.unwrap();
+    match login_resp {
+        Ok(login_resp) => {
+            let token = login_resp.text().await.unwrap();
 
-    let now = Instant::now();
+            let now = Instant::now();
 
-    let response = client
-        .get(format!("https://api.olech2412.de/mensaHub/{}/servingDate/{}", mensa, date))
-        .bearer_auth(&token)
-        .send()
-        .await
-        .unwrap();
-    let txt = response.text().await.unwrap();
-    // write string to file
-    
-    txt
+            let response = client
+                .get(format!(
+                    "https://api.olech2412.de/mensaHub/{}/servingDate/{}",
+                    mensa, date
+                ))
+                .bearer_auth(&token)
+                .send()
+                .await;
+
+            match response {
+                Ok(t) => Some(t.text().await.unwrap()),
+                Err(_) => None,
+            }
+        }
+        Err(_) => None,
+    }
+
     // response.text().await.unwrap()
 }
 
@@ -70,7 +78,6 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     let day_meals = get_meals(requested_date, mensa_location).await;
     let f_date = german_date_fmt(requested_date.date_naive());
 
-
     // start message formatting
     let now = Instant::now();
 
@@ -90,46 +97,49 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         future_day_info.unwrap_or_default()
     );
 
-    if day_meals.is_empty() {
-        msg += &markdown::bold("\nkeine Daten vorhanden.\n");
-    }
+    match day_meals {
+        Some(meals) => {
+            if meals.is_empty() {
+                msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+            } else {
+                let mut structured_day_meals: HashMap<String, Vec<nMealGroup>> = HashMap::new();
 
-    // loop over meal groups
-    for meal_group in day_meals {
-        // let mut price_is_shared = true;
-        // let price_first_submeal = &meal_group.sub_meals.first().unwrap().price;
+                // loop over meal groups
+                for meal in meals {
+                    if let Some(cat) = structured_day_meals.get_mut(&meal.category) {
+                        cat.push(meal);
+                    } else {
+                        structured_day_meals.insert(meal.name.clone(), vec![meal]);
+                    }
+                }
 
-        // for sub_meal in &meal_group.sub_meals {
-        //     if &sub_meal.price != price_first_submeal {
-        //         price_is_shared = false;
-        //         break;
-        //     }
-        // }
+                for meal_group in structured_day_meals {
+                    // Bold type of meal (-group)
 
-        // Bold type of meal (-group)
-        let sub_ingredients = &meal_group.description.split('&').map(|x| x.trim()).collect::<Vec<&str>>();
-        msg += &format!("\n{}\n", markdown::bold(&meal_group.category));
-        msg += &format!(" • {}\n", markdown::underline(&meal_group.name));
-        for ingr in sub_ingredients {
-            msg += &format!("     + {}\n", markdown::italic(ingr));
+                    let title = meal_group.0;
+                    let meal_group = meal_group.1;
+
+                    msg += &format!("\n{}\n", markdown::bold(&title));
+                    for meal in meal_group {
+                        msg += &format!(" • {}\n", markdown::underline(&meal.name));
+                        let sub_ingredients = &meal
+                            .description
+                            .split('&')
+                            .map(|x| x.trim())
+                            .collect::<Vec<&str>>();
+                        for ingr in sub_ingredients {
+                            if *ingr != "N/A" {
+                                msg += &format!("     + {}\n", markdown::italic(ingr));
+                            }
+                        }
+                        msg += &format!("  {}\n", &meal.price);
+                    }
+                }
+            }
         }
-        msg += &format!("   {}\n", &meal_group.price);
-        
-        // loop over meals in meal group
-        // for sub_meal in &meal_group.sub_meals {
-        //     // underlined single or multiple meal name
-        //     msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
-
-        //     // loop over ingredients of meal
-        //     for ingredient in &sub_meal.additional_ingredients {
-        //         // appending ingredient to msg
-        //         msg += &format!("     + {}\n", markdown::italic(ingredient))
-        //     }
-        //     // appending price
-
-        //     msg += &format!("   {}\n", sub_meal.price);
-
-        // }
+        None => {
+            msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+        }
     }
 
     msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
@@ -138,25 +148,29 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Vec<nMealGroup> {
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Option<Vec<nMealGroup>> {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
 
     // let (date, mensa) = build_url_params(requested_date, mensa_location);
-    let mm_json = mm_json_request(requested_date, mensa_location).await.unwrap();
+    let mm_json = mm_json_request(requested_date, mensa_location).await;
 
-    // // // // write mm_json to file
-    // // let mut file = File::create("mm_json.json").await.unwrap();
-    // // file.write_all(mm_json.as_bytes()).await.unwrap();
+    match mm_json {
+        Some(text) => {
+            // let mut file = File::create("mm_json.json").await.unwrap();
+            // file.write_all(text.as_bytes()).await.unwrap();
 
-    let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
+            let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&text).unwrap();
+            Some(day_meal_groups)
+        }
+        None => None,
+    }
+    // // write mm_json to file
 
     // serde::Deserialize::deserialize(&mm_json).unwrap();
     // let downloaded_meals = extract_data_from_html(&mm_json, day).await;
     // serialize downloaded meals
     // let downloadked_json_text = serde_json::to_string(&downloaded_meals).unwrap();´
-    
-    day_meal_groups
 }
 
 async fn reqwest_get_html_text(url_params: &String) -> String {
@@ -438,22 +452,16 @@ fn escape_markdown_v2(input: &str) -> String {
 //     }
 // }
 
-async fn mm_json_request(
-    day: DateTime<Local>,
-    mensa_id: u8,
-) -> Option<String> {
+async fn mm_json_request(day: DateTime<Local>, mensa_id: u8) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
-    
+
     // getting data from server
     let req_now = Instant::now();
     // let downloaded_html = reqwest_get_html_text(&url_params).await;
     let mm_json = get_mensimates_json(&date, &mensa).await;
     log::debug!("got MM json after {:.2?}", req_now.elapsed());
 
-    Some(mm_json)
-
-    
-    
+    mm_json
 
     // read (and update) cached json
     //  match File::open(format!("cached_data/{}.json", &url_params)).await {
