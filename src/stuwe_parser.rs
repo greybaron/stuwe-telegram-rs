@@ -33,7 +33,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
             // Any other weekday is fine, nothing to do
         }
     }
-    log::debug!("determine request date: {:.2?}", now.elapsed());
+    log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
     let day_meals = get_meals(requested_date, mensa_location).await;
@@ -225,7 +225,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
         }
     }
 
-    log::debug!("parsing html: {:.2?}", now.elapsed());
+    log::debug!("HTML → Data: {:.2?}", now.elapsed());
     MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
@@ -391,9 +391,7 @@ async fn save_to_cache(
     let url_params = build_url_params(day, mensa_id);
     
     // getting data from server
-    let req_now = Instant::now();
     let downloaded_html = reqwest_get_html_text(&url_params).await;
-    log::debug!("got html after {:.2?}", req_now.elapsed());
 
     let downloaded_meals = extract_data_from_html(&downloaded_html, day).await;
     // serialize downloaded meals

@@ -23,6 +23,7 @@ serde_json = "1.0.102"
 reqwest = "0.11.18"
 scraper = "0.17.1"
 selectors = "0.25.0"
+sensible-env-logger = { version = "0.3.2", features = ["local-time"] }
 
 [profile.release]
 strip = true
