@@ -138,7 +138,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
             }
         }
         None => {
-            msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+            msg += &markdown::bold("\nMensiMates-Abfrage fehlgeschlagen.\n");
         }
     }
 
