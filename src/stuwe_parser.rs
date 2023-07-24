@@ -146,8 +146,8 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Vec<n
     let mm_json = mm_json_request(requested_date, mensa_location).await.unwrap();
 
     // // write mm_json to file
-    // let mut file = File::create("mm_json.json").await.unwrap();
-    // file.write_all(mm_json.as_bytes()).await.unwrap();
+    let mut file = File::create("mm_json.json").await.unwrap();
+    file.write_all(mm_json.as_bytes()).await.unwrap();
 
     let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&mm_json).unwrap();
 
