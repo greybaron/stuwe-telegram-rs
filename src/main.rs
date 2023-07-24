@@ -35,6 +35,16 @@ async fn main() {
                 log::LevelFilter::Info
             },
         )
+        .filter_module(
+            "beta_telegram_rs",
+            if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).unwrap_or_default()
+                == "debug"
+            {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            },
+        )
         .init();
 
     // pretty_env_logger::
