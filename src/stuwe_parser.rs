@@ -26,8 +26,6 @@ async fn get_mensimates_json(date: &str, mensa: &str) -> Option<String> {
         Ok(login_resp) => {
             let token = login_resp.text().await.unwrap();
 
-            let now = Instant::now();
-
             let response = client
                 .get(format!(
                     "https://api.olech2412.de/mensaHub/{}/servingDate/{}",

@@ -146,7 +146,7 @@ async fn callback_handler(
                 bot.edit_message_text(chat.id, id, Command::descriptions().to_string() + subtext)
                 .await?;
 
-                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /uhrzeit [Zeit]", markdown::bold(&mensa_name)))
+                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /uhrzeit [[Zeit]]", markdown::bold(&mensa_name)))
                 .parse_mode(ParseMode::MarkdownV2).await?;
 
                 JobHandlerTask {
@@ -263,7 +263,7 @@ async fn command_handler(
                         .reply_markup(keyboard)
                         .await?;
                 } else {
-                    bot.send_message(msg.chat.id, "Bitte zuerst /start ausführen")
+                    bot.send_message(msg.chat.id, "NO_DB_MSG")
                         .await?;
                 }
                 
@@ -299,7 +299,7 @@ async fn command_handler(
                     registration_tx.send(registration_job).unwrap();
                 }
                 } else {
-                    bot.send_message(msg.chat.id, "Bitte zuerst /start ausführen")
+                    bot.send_message(msg.chat.id, "NO_DB_MSG")
                         .await?;
                 }
             }
@@ -332,7 +332,7 @@ async fn command_handler(
                         }).unwrap();
                     }
                 } else {
-                    bot.send_message(msg.chat.id, "Bitte zuerst /start ausführen")
+                    bot.send_message(msg.chat.id, "NO_DB_MSG")
                         .await?;
                 }
             }
@@ -362,7 +362,7 @@ async fn command_handler(
                         }
                     };
                 } else {
-                    bot.send_message(msg.chat.id, "Bitte zuerst /start ausführen")
+                    bot.send_message(msg.chat.id, "NO_DB_MSG")
                         .await?;
                 }
             }
@@ -733,14 +733,14 @@ enum Command {
     Morgen,
     #[command(description = "off")]
     Uebermorgen,
+    #[command(description = "Mensa wechseln")]
+    Mensa,
     #[command(description = "automat. Nachrichten AN")]
     Subscribe,
     #[command(description = "autom. Nachrichten AUS")]
     Unsubscribe,
     #[command(description = "off")]
     Uhrzeit,
-    #[command(description = "off")]
-    Mensa,
     #[command(description = "off")]
     Start,
 }
