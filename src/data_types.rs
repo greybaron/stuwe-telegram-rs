@@ -9,7 +9,6 @@ pub enum JobType {
     Unregister,
     QueryRegistration,
     UpdateRegistration,
-    BroadcastUpdate,
 }
 
 #[derive(Debug, Clone)]
@@ -32,39 +31,19 @@ pub enum TimeParseError {
     InvalidTimePassed,
 }
 
-// used for stuwe parser/message generator
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MealsForDay {
-    pub date: String,
-    pub meal_groups: Vec<MealGroup>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MealGroup {
-    pub meal_type: String,
-    pub sub_meals: Vec<SingleMeal>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SingleMeal {
-    pub name: String,
-    pub additional_ingredients: Vec<String>,
-    pub price: String,
-}
-
-
 #[derive(Serialize, Deserialize, Debug, Clone)]
-
-pub struct nMealGroup {
+pub struct MealGroup {
     pub id: u64,
     pub name: String,
     pub description: String,
     pub price: String,
     pub category: String,
-    pub servingDate: String,
-    pub additionalInfo: String,
+    #[serde(rename = "servingDate")]
+    pub serving_date: String,
+    #[serde(rename = "additionalInfo")]
+    pub additional_info: String,
     pub allergens: String,
     pub additives: String,
     pub rating: f32,
-    pub votes: u64
+    pub votes: u64,
 }

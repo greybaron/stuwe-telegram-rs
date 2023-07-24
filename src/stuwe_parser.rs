@@ -1,12 +1,8 @@
-use crate::data_types::{nMealGroup, MealGroup, MealsForDay, SingleMeal};
+use crate::data_types::MealGroup;
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
-use scraper::{Html, Selector};
-use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
-use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
 use std::{collections::HashMap, time::Instant};
 
@@ -77,9 +73,6 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     let day_meals = get_meals(requested_date, mensa_location).await;
     let f_date = german_date_fmt(requested_date.date_naive());
 
-    // start message formatting
-    let now = Instant::now();
-
     // warn if requested "today" was raised to next monday (requested on sat/sun)
     let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
         Some(" (Morgen)")
@@ -104,7 +97,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
-                let mut structured_day_meals: HashMap<String, Vec<nMealGroup>> = HashMap::new();
+                let mut structured_day_meals: HashMap<String, Vec<MealGroup>> = HashMap::new();
 
                 // loop over meal groups
                 for meal in meals {
@@ -123,10 +116,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
 
                     let meal_group = meal_group.1;
 
-                    let mut price_is_shared = true;
-                    let mut first_price = meal_group.first().unwrap().price.clone();
-                    
-                    // let test = meal_group.iter().map(|x| x == first_price).collect();
+                    let first_price = meal_group.first().unwrap().price.clone();
                     let price_is_shared = meal_group.iter().all(|item| item.price == first_price);
 
                     for meal in meal_group {
@@ -160,7 +150,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Option<Vec<nMealGroup>> {
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Option<Vec<MealGroup>> {
     // returns meals struct either from cache,
     // or starts html request, parses data; returns data and also triggers saving to cache
 
@@ -172,7 +162,7 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Optio
             // let mut file = File::create("mm_json.json").await.unwrap();
             // file.write_all(text.as_bytes()).await.unwrap();
 
-            let day_meal_groups: Vec<nMealGroup> = serde_json::from_str(&text).unwrap();
+            let day_meal_groups: Vec<MealGroup> = serde_json::from_str(&text).unwrap();
             Some(day_meal_groups)
         }
         None => None,
@@ -183,134 +173,6 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Optio
     // let downloaded_meals = extract_data_from_html(&mm_json, day).await;
     // serialize downloaded meals
     // let downloadked_json_text = serde_json::to_string(&downloaded_meals).unwrap();´
-}
-
-async fn reqwest_get_html_text(url_params: &String) -> String {
-    // requests html from server for chosen url params and returns html_text string
-
-    let url_base: String =
-        "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?".to_string();
-
-    reqwest::get(url_base + url_params)
-        .await
-        .expect("URL request failed")
-        .text()
-        .await
-        .unwrap()
-}
-
-async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> MealsForDay {
-    let now = Instant::now();
-    let mut v_meal_groups: Vec<MealGroup> = Vec::new();
-
-    let document = Html::parse_fragment(html_text);
-
-    // retrieving reported date and comparing to requested date
-    let date_sel = Selector::parse(r#"select#edit-date>option[selected='selected']"#).unwrap();
-    let received_date_human = document.select(&date_sel).next().unwrap().inner_html();
-
-    let sub = received_date_human.split(' ').nth(1).unwrap();
-    let received_date = NaiveDate::parse_from_str(sub, "%d.%m.%Y").unwrap();
-
-    if received_date != requested_date.naive_local().date() {
-        return MealsForDay {
-            date: german_date_fmt(requested_date.naive_local().date()),
-            meal_groups: v_meal_groups,
-        };
-    }
-
-    let container_sel = Selector::parse(r#"section.meals"#).unwrap();
-    let all_child_select = Selector::parse(r#":scope > *"#).unwrap();
-
-    let container = document.select(&container_sel).next().unwrap();
-
-    for child in container.select(&all_child_select) {
-        if child
-            .value()
-            .has_class("title-prim", CaseSensitivity::CaseSensitive)
-        {
-            // title-prim == new group -> init new group struct
-            let mut meals_in_group: Vec<SingleMeal> = Vec::new();
-
-            let mut next_sibling = child.next_sibling_element().unwrap();
-
-            // skip headlines (or other junk elements)
-            // might loop infinitely (or probably crash) if last element is not of class .accordion.ublock :)
-            while !(next_sibling
-                .value()
-                .has_class("accordion", CaseSensitivity::CaseSensitive)
-                && next_sibling
-                    .value()
-                    .has_class("u-block", CaseSensitivity::CaseSensitive))
-            {
-                next_sibling = next_sibling.next_sibling_element().unwrap();
-            }
-
-            // "next_sibling" is now of class ".accordion.u-block", aka. a group of 1 or more dishes
-            // -> looping over meals in group
-            for dish_element in next_sibling.select(&all_child_select) {
-                let mut additional_ingredients: Vec<String> = Vec::new();
-
-                // looping over meal ingredients
-                for add_ingred_element in
-                    dish_element.select(&Selector::parse(r#"details>ul>li"#).unwrap())
-                {
-                    additional_ingredients.push(add_ingred_element.inner_html());
-                }
-
-                // collecting into SingleMeal struct
-                let meal = SingleMeal {
-                    name: dish_element
-                        .select(&Selector::parse(r#"header>div>div>h4"#).unwrap())
-                        .next()
-                        .unwrap()
-                        .inner_html(),
-                    additional_ingredients, //
-                    price: dish_element
-                        .select(&Selector::parse(r#"header>div>div>p"#).unwrap())
-                        .next()
-                        .unwrap()
-                        .inner_html()
-                        .split('\n')
-                        .last()
-                        .unwrap()
-                        .trim()
-                        .to_string(),
-                };
-
-                // pushing SingleMeal to meals struct
-                meals_in_group.push(meal);
-            }
-
-            // collecting into MealGroup struct
-            let meal_group = MealGroup {
-                meal_type: child.inner_html(),
-                sub_meals: meals_in_group,
-            };
-
-            // pushing MealGroup to MealGroups struct
-            v_meal_groups.push(meal_group);
-        }
-    }
-
-    log::debug!("HTML → Data: {:.2?}", now.elapsed());
-    MealsForDay {
-        date: received_date_human,
-        meal_groups: v_meal_groups,
-    }
-}
-
-async fn save_update_cache(url_params: &str, json_text: &str) {
-    // check cache dir existence, and create if not found
-    std::fs::create_dir_all("cached_data/").expect("failed to create data cache dir");
-
-    let mut json_file = File::create(format!("cached_data/{}.json", &url_params))
-        .await
-        .expect("failed to create json cache file");
-    json_file
-        .write_all(json_text.as_bytes())
-        .await
-        .expect("failed to write to a json file");
 }
 
 fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (String, String) {

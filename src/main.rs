@@ -1,8 +1,7 @@
 mod data_types;
 use data_types::{JobHandlerTask, JobType, RegistrationEntry, TimeParseError};
 mod stuwe_parser;
-use stuwe_parser::{build_meal_message};
-
+use stuwe_parser::build_meal_message;
 
 use chrono::Timelike;
 use log::log_enabled;
@@ -62,8 +61,6 @@ async fn main() {
         ("Mensa Tierklinik", 170),
     ]);
 
-    let mensen_c = mensen.clone();
-
     if !log_enabled!(log::Level::Debug) {
         log::info!("Set env variable 'RUST_LOG=debug' for performance metrics");
     }
@@ -72,7 +69,6 @@ async fn main() {
         broadcast::Sender<JobHandlerTask>,
         broadcast::Receiver<JobHandlerTask>,
     ) = broadcast::channel(10);
-    let registration_tx2 = registration_tx.clone();
 
     let (query_registration_tx, _): (broadcast::Sender<Option<RegistrationEntry>>, _) =
         broadcast::channel(10);
@@ -95,11 +91,9 @@ async fn main() {
         log::info!("Starting task scheduler...");
         init_task_scheduler(
             bot_tasksched,
-            registration_tx2,
             job_rx,
             query_registration_tx_tasksched,
             loaded_user_data,
-            mensen_c,
         )
         .await;
     });
@@ -609,16 +603,13 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> Optio
 
 async fn init_task_scheduler(
     bot: Bot,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
+    // registration_tx: broadcast::Sender<JobHandlerTask>,
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
-    mensen: HashMap<&str, u8>,
 ) {
     let tasks_from_db = get_all_tasks_db();
     let sched = JobScheduler::new().await.unwrap();
-
-    let mensen_ids: Vec<u8> = mensen.values().copied().collect();
 
     // // run cache update every 5 minutes
     // let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
@@ -770,39 +761,38 @@ async fn init_task_scheduler(
                 }
 
                 query_registration_tx.send(uuid_opt.copied()).unwrap();
-            }
-            JobType::BroadcastUpdate => {
-                log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
-                for (chat_id, registration_data) in &loaded_user_data {
-                    let mensa_id = registration_data.1;
+            } // JobType::BroadcastUpdate => {
+              //     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
+              //     for (chat_id, registration_data) in &loaded_user_data {
+              //         let mensa_id = registration_data.1;
 
-                    let now = chrono::Local::now();
+              //         let now = chrono::Local::now();
 
-                    if let (Some(job_hour), Some(job_minute)) =
-                        (registration_data.2, registration_data.3)
-                    {
-                        // filter only registrations with same mensa id as update
-                        if mensa_id == job_handler_task.mensa_id.unwrap()
-                        // only push updates after first auto msg: job hour has to be sooner, or same hour but minute has to be sooner
-                        && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
-                        {
-                            log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
+              //         if let (Some(job_hour), Some(job_minute)) =
+              //             (registration_data.2, registration_data.3)
+              //         {
+              //             // filter only registrations with same mensa id as update
+              //             if mensa_id == job_handler_task.mensa_id.unwrap()
+              //             // only push updates after first auto msg: job hour has to be sooner, or same hour but minute has to be sooner
+              //             && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
+              //             {
+              //                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
 
-                            bot.send_message(
-                                ChatId(*chat_id),
-                                format!(
-                                    "{}\n{}",
-                                    &markdown::bold(&markdown::underline("Planänderung:")),
-                                    build_meal_message(0, mensa_id).await
-                                ),
-                            )
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .await
-                            .unwrap();
-                        }
-                    }
-                }
-            }
+              //                 bot.send_message(
+              //                     ChatId(*chat_id),
+              //                     format!(
+              //                         "{}\n{}",
+              //                         &markdown::bold(&markdown::underline("Planänderung:")),
+              //                         build_meal_message(0, mensa_id).await
+              //                     ),
+              //                 )
+              //                 .parse_mode(ParseMode::MarkdownV2)
+              //                 .await
+              //                 .unwrap();
+              //             }
+              //         }
+              //     }
+              // }
         }
     }
 }
