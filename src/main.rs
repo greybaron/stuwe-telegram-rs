@@ -108,46 +108,85 @@ async fn callback_handler(
     q: CallbackQuery,
     mensen: HashMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    if let Some(mensa_name) = q.data {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    if let Some(q_data) = q.data {
         // acknowledge callback query to remove the loading alert
         bot.answer_callback_query(q.id).await?;
 
         if let Some(Message { id, chat, .. }) = q.message {
-            let new_registration_data =
-            // fuck no
-            if mensa_name.starts_with('#') {
-                let mensa_name = &mensa_name.strip_prefix('#').unwrap();
-                // replace mensa selection message with selected mensa
-                bot.edit_message_text(chat.id, id, format!("Gewählte Mensa: {}", markdown::bold(mensa_name))).parse_mode(ParseMode::MarkdownV2).await.unwrap();
+            let (cmd, arg) = q_data.split_once(':').unwrap();
+            match cmd {
+                "m_upd" => {
+                    // replace mensa selection message with selected mensa
+                    bot.edit_message_text(
+                        chat.id,
+                        id,
+                        format!("Gewählte Mensa: {}", markdown::bold(arg)),
+                    )
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await
+                    .unwrap();
 
-                JobHandlerTask {
-                    job_type: JobType::UpdateRegistration,
-                    chat_id: Some(chat.id.0),
-                    mensa_id: Some(*mensen.get(mensa_name).unwrap()),
-                    hour: None,
-                    minute: None,
+                    let task = JobHandlerTask {
+                        job_type: JobType::UpdateRegistration,
+                        chat_id: Some(chat.id.0),
+                        mensa_id: Some(*mensen.get(arg).unwrap()),
+                        hour: None,
+                        minute: None,
+                    };
+                    registration_tx.send(task).unwrap();
                 }
+                "m_regist" => {
+                    let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
+                    // replace mensa selection message with list of commands
+                    bot.edit_message_text(
+                        chat.id,
+                        id,
+                        Command::descriptions().to_string() + subtext,
+                    )
+                    .await?;
+
+                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa, bzw\\.\n/uhrzeit \\[Zeit\\]", markdown::bold(arg)))
+                    .parse_mode(ParseMode::MarkdownV2).await?;
+
+                    let task = JobHandlerTask {
+                        job_type: JobType::Register,
+                        chat_id: Some(chat.id.0),
+                        mensa_id: Some(*mensen.get(arg).unwrap()),
+                        hour: Some(6),
+                        minute: Some(0),
+                    };
+                    registration_tx.send(task).unwrap();
+                }
+                "day" => {
+                    bot.edit_message_reply_markup(chat.id, id).await.unwrap();
+                    // bot.delete_message(chat.id, id).await.unwrap();
+                    let days_forward = arg.parse::<i64>().unwrap();
+
+                    let now = Instant::now();
+                    registration_tx.send(make_query_data(chat.id.0)).unwrap();
+
+                    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
+                        let text = build_meal_message(days_forward, registration.1).await;
+                        log::debug!("Build Heute msg: {:.2?}", now.elapsed());
+                        let now = Instant::now();
+
+                        let keyboard = make_days_keyboard();
+                        bot.send_message(chat.id, text)
+                            .parse_mode(ParseMode::MarkdownV2)
+                            .reply_markup(keyboard)
+                            .await?;
+                        log::debug!("Send heute msg: {:.2?}", now.elapsed());
+                    } else {
+                        bot.send_message(chat.id, "Bitte zuerst /start ausführen")
+                            .await?;
+                    }
+                }
+                _ => panic!("Unknown callback query command: {}", cmd),
             }
-            else {
-                let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
-                // replace mensa selection message with list of commands
-                bot.edit_message_text(chat.id, id, Command::descriptions().to_string() + subtext)
-                .await?;
-
-                bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit /mensa, bzw.\n/uhrzeit \\[Zeit\\]", markdown::bold(&mensa_name)))
-                .parse_mode(ParseMode::MarkdownV2).await?;
-
-                JobHandlerTask {
-                    job_type: JobType::Register,
-                    chat_id: Some(chat.id.0),
-                    mensa_id: Some(*mensen.get(mensa_name.as_str()).unwrap()),
-                    hour: Some(6),
-                    minute: Some(0),
-                }
-            };
-
-            registration_tx.send(new_registration_data).unwrap();
         }
     }
 
@@ -187,9 +226,15 @@ async fn command_handler(
                     let text = build_meal_message(0, registration.1).await;
                     log::debug!("Build Heute msg: {:.2?}", now.elapsed());
                     let now = Instant::now();
+
+                    let keyboard = make_days_keyboard();
                     bot.send_message(msg.chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(keyboard)
                         .await?;
+                    // bot.send_message(msg.chat.id, text)
+                    //     .parse_mode(ParseMode::MarkdownV2)
+                    //     .await?;
                     log::debug!("Send heute msg: {:.2?}", now.elapsed());
                 } else {
                     // every user has a registration (starting the chat always calls /start)
@@ -371,12 +416,24 @@ fn make_mensa_keyboard(mensen: HashMap<&str, u8>, only_mensa_upd: bool) -> Inlin
         if only_mensa_upd {
             keyboard.push([InlineKeyboardButton::callback(
                 mensa.0,
-                format!("#{}", mensa.0),
+                format!("m_upd:{}", mensa.0),
             )]);
         } else {
-            keyboard.push([InlineKeyboardButton::callback(mensa.0, mensa.0)]);
+            keyboard.push([InlineKeyboardButton::callback(
+                mensa.0,
+                format!("m_regist:{}", mensa.0),
+            )]);
         }
     }
+    InlineKeyboardMarkup::new(keyboard)
+}
+
+fn make_days_keyboard() -> InlineKeyboardMarkup {
+    let keyboard = vec![vec![
+        InlineKeyboardButton::callback("Heute", "day:0"),
+        InlineKeyboardButton::callback("Morgen", "day:1"),
+        InlineKeyboardButton::callback("Überm.", "day:2"),
+    ]];
     InlineKeyboardMarkup::new(keyboard)
 }
 

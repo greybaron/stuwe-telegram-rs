@@ -1,6 +1,7 @@
 use crate::data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
+use rand::Rng;
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
@@ -51,11 +52,14 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         None
     };
 
-    // insert date + potential future day warning
+    let emojis = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "🍽️", "☝🏻", "🌤️"];
+    let rand_emoji = emojis[rand::thread_rng().gen_range(0..emojis.len())];
     msg += &format!(
-        "{}{}\n",
+        "{} {}{} {}\n",
+        rand_emoji,
         markdown::italic(&day_meals.date),
-        future_day_info.unwrap_or_default()
+        future_day_info.unwrap_or_default(),
+        rand_emoji
     );
 
     if day_meals.meal_groups.is_empty() {
@@ -97,9 +101,6 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         }
     }
 
-    msg += "\n < /heute >  < /morgen >\n < /uebermorgen >";
-
-    // return
     escape_markdown_v2(&msg)
 }
 
@@ -113,7 +114,10 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Meals
     if let Some(day_meals) = json_cache_to_meal(&url_params).await {
         day_meals
     } else {
-        save_to_cache(requested_date, mensa_location).await.1.unwrap()
+        save_to_cache(requested_date, mensa_location)
+            .await
+            .1
+            .unwrap()
     }
 }
 
@@ -345,9 +349,7 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
     for mensa_id in mensen {
         // spawning task for every day
         for day in &days {
-            handles.push(tokio::spawn({
-                save_to_cache(*day, *mensa_id)
-            }))
+            handles.push(tokio::spawn(save_to_cache(*day, *mensa_id)))
         }
     }
 
@@ -384,12 +386,9 @@ async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
     }
 }
 
-async fn save_to_cache(
-    day: DateTime<Local>,
-    mensa_id: u8,
-) -> (Option<u8>, Option<MealsForDay>) {
+async fn save_to_cache(day: DateTime<Local>, mensa_id: u8) -> (Option<u8>, Option<MealsForDay>) {
     let url_params = build_url_params(day, mensa_id);
-    
+
     // getting data from server
     let downloaded_html = reqwest_get_html_text(&url_params).await;
 
@@ -398,7 +397,7 @@ async fn save_to_cache(
     let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
 
     // read (and update) cached json
-     match File::open(format!("cached_data/{}.json", &url_params)).await {
+    match File::open(format!("cached_data/{}.json", &url_params)).await {
         Ok(mut json) => {
             let mut cache_json_text = String::new();
             json.read_to_string(&mut cache_json_text).await.unwrap();
@@ -407,8 +406,14 @@ async fn save_to_cache(
             // return new data if requested
             if downloaded_json_text != cache_json_text {
                 save_update_cache(&url_params, &downloaded_json_text).await;
-                (if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
-                Some(downloaded_meals))
+                (
+                    if day.weekday() == chrono::Local::now().weekday() {
+                        Some(mensa_id)
+                    } else {
+                        None
+                    },
+                    Some(downloaded_meals),
+                )
             } else {
                 (None, Some(downloaded_meals))
             }
@@ -416,8 +421,12 @@ async fn save_to_cache(
         Err(_) => {
             save_update_cache(&url_params, &downloaded_json_text).await;
             (
-                if day.weekday() == chrono::Local::now().weekday() {Some(mensa_id)} else {None},
-                Some(downloaded_meals)
+                if day.weekday() == chrono::Local::now().weekday() {
+                    Some(mensa_id)
+                } else {
+                    None
+                },
+                Some(downloaded_meals),
             )
         }
     }

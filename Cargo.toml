@@ -24,6 +24,7 @@ reqwest = "0.11.18"
 scraper = "0.17.1"
 selectors = "0.25.0"
 sensible-env-logger = { version = "0.3.2", features = ["local-time"] }
+rand = "0.8.5"
 
 [profile.release]
 strip = true
