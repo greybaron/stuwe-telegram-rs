@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use teloxide::types::MessageId;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -10,6 +11,7 @@ pub enum JobType {
     QueryRegistration,
     UpdateRegistration,
     BroadcastUpdate,
+    InsertCallbackMessageId,
 }
 
 #[derive(Debug, Clone)]
@@ -19,10 +21,11 @@ pub struct JobHandlerTask {
     pub mensa_id: Option<u8>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
+    pub callback_id: Option<MessageId>,
 }
 
-// opt (job uuid), mensa id, opt(hour), opt(min)
-pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>);
+// opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
+pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<MessageId>);
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {

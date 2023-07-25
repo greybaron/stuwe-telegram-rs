@@ -51,7 +51,7 @@ async fn main() {
         ("Mensa Tierklinik", 170),
     ]);
 
-    let mensen_c = mensen.clone();
+    let mensen_ts = mensen.clone();
 
     if !log_enabled!(log::Level::Debug) {
         log::info!("Set env variable 'RUST_LOG=debug' for performance metrics");
@@ -61,13 +61,13 @@ async fn main() {
         broadcast::Sender<JobHandlerTask>,
         broadcast::Receiver<JobHandlerTask>,
     ) = broadcast::channel(10);
-    let registration_tx2 = registration_tx.clone();
+    let registration_tx_ts = registration_tx.clone();
 
     let (query_registration_tx, _): (broadcast::Sender<Option<RegistrationEntry>>, _) =
         broadcast::channel(10);
     // there is effectively only one tx and rx, however since rx cant be passed to the command_handler,
     // tx has to be cloned, and passed to both (inside command_handler it will be resubscribed to rx)
-    let query_registration_tx_tasksched = query_registration_tx.clone();
+    let query_registration_tx_ts = query_registration_tx.clone();
 
     let bot = Bot::from_env();
     let bot_tasksched = bot.clone();
@@ -84,11 +84,11 @@ async fn main() {
         log::info!("Starting task scheduler...");
         init_task_scheduler(
             bot_tasksched,
-            registration_tx2,
+            registration_tx_ts,
             job_rx,
-            query_registration_tx_tasksched,
+            query_registration_tx_ts,
             loaded_user_data,
-            mensen_c,
+            mensen_ts,
         )
         .await;
     });
@@ -136,6 +136,7 @@ async fn callback_handler(
                         mensa_id: Some(*mensen.get(arg).unwrap()),
                         hour: None,
                         minute: None,
+                        callback_id: None,
                     };
                     registration_tx.send(task).unwrap();
                 }
@@ -158,12 +159,24 @@ async fn callback_handler(
                         mensa_id: Some(*mensen.get(arg).unwrap()),
                         hour: Some(6),
                         minute: Some(0),
+                        callback_id: None,
                     };
                     registration_tx.send(task).unwrap();
                 }
                 "day" => {
-                    bot.edit_message_reply_markup(chat.id, id).await.unwrap();
-                    // bot.delete_message(chat.id, id).await.unwrap();
+                    // sometimes fails if you really spam those buttons, because two callbacks cant edit the
+                    // message simultaneously. But who cares, since both callbacks will just remove the buttons
+                    _ = bot.edit_message_reply_markup(chat.id, id).await.unwrap();
+                    let test = JobHandlerTask {
+                        job_type: JobType::InsertCallbackMessageId,
+                        chat_id: Some(chat.id.0),
+                        mensa_id: None,
+                        hour: None,
+                        minute: None,
+                        callback_id: Some(id),
+                    };
+                    registration_tx.send(test).unwrap();
+
                     let days_forward = arg.parse::<i64>().unwrap();
 
                     let now = Instant::now();
@@ -200,6 +213,7 @@ fn make_query_data(chat_id: i64) -> JobHandlerTask {
         mensa_id: None,
         hour: None,
         minute: None,
+        callback_id: None,
     }
 }
 
@@ -328,6 +342,7 @@ async fn command_handler(
                             mensa_id: None,
                             hour: Some(6),
                             minute: Some(0),
+                            callback_id: None,
                         };
 
                         registration_tx.send(registration_job).unwrap();
@@ -361,6 +376,7 @@ async fn command_handler(
                                 mensa_id: None,
                                 hour: None,
                                 minute: None,
+                                callback_id: None,
                             })
                             .unwrap();
                     }
@@ -383,6 +399,7 @@ async fn command_handler(
                                 mensa_id: None,
                                 hour: Some(hour),
                                 minute: Some(minute),
+                                callback_id: None,
                             };
                             registration_tx.send(registration_job).unwrap();
                         }
@@ -543,6 +560,7 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
                 mensa_id: row.get(1)?,
                 hour: row.get(2)?,
                 minute: row.get(3)?,
+                callback_id: None,
             })
         })
         .unwrap();
@@ -554,7 +572,7 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     tasks
 }
 
-async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> Option<Uuid> {
+async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask, registration_tx: broadcast::Sender<JobHandlerTask>, query_registration_rx: broadcast::Receiver<Option<RegistrationEntry>>) -> Option<Uuid> {
     // return if no time is set
     task.hour?;
 
@@ -577,14 +595,30 @@ async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> Optio
         .as_str(),
         move |_uuid, mut _l| {
             let bot = bot.clone();
+            let registration_tx = registration_tx.clone();
+            let mut query_registration_rx = query_registration_rx.resubscribe();
+
             Box::pin(async move {
-                bot.send_message(
-                    ChatId(task.chat_id.unwrap()),
-                    build_meal_message(0, task.mensa_id.unwrap()).await,
-                )
-                .parse_mode(ParseMode::MarkdownV2)
-                .await
-                .unwrap();
+                registration_tx.send(make_query_data(task.chat_id.unwrap())).unwrap();
+                let prev_regist = query_registration_rx.recv().await.unwrap().unwrap();
+
+
+                let keyboard = make_days_keyboard();
+                if let Some(callback_id) = prev_regist.4 {
+
+                };
+                bot.send_message(ChatId(task.chat_id.unwrap()), build_meal_message(0, task.mensa_id.unwrap()).await)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(keyboard)
+                        .await.unwrap();
+
+                // bot.send_message(
+                //     ChatId(task.chat_id.unwrap()),
+                //     build_meal_message(0, task.mensa_id.unwrap()).await,
+                // )
+                // .parse_mode(ParseMode::MarkdownV2)
+                // .await
+                // .unwrap();
             })
         },
     )
@@ -609,10 +643,9 @@ async fn init_task_scheduler(
 
     let mensen_ids = mensen.values().copied().collect();
 
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     // always update cache on startup
+    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     update_cache(&mensen_ids).await;
-
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
     // run cache update every 5 minutes
@@ -620,8 +653,9 @@ async fn init_task_scheduler(
         log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
         let registration_tx = registration_tx.clone();
+        let query_registration_rx = query_registration_tx.subscribe();
+        
         let mensen_ids = mensen_ids.clone();
-
         Box::pin(async move {
             let today_changed_mensen = update_cache(&mensen_ids).await;
 
@@ -633,6 +667,7 @@ async fn init_task_scheduler(
                         mensa_id: Some(mensa),
                         hour: None,
                         minute: None,
+                        callback_id: None,
                     })
                     .unwrap();
             }
@@ -644,10 +679,10 @@ async fn init_task_scheduler(
     for task in tasks_from_db {
         let bot = bot.clone();
 
-        let uuid = load_job(bot, &sched, task.clone()).await;
+        let uuid = load_job(bot, &sched, task.clone(), registration_tx, query_registration_tx.subscribe()).await;
         loaded_user_data.insert(
             task.chat_id.unwrap(),
-            (uuid, task.mensa_id.unwrap(), task.hour, task.minute),
+            (uuid, task.mensa_id.unwrap(), task.hour, task.minute, None),
         );
     }
 
@@ -673,7 +708,7 @@ async fn init_task_scheduler(
                 };
 
                 // get uuid (here guaranteed to be Some() since default is registration with job)
-                let new_uuid = load_job(bot.clone(), &sched, job_handler_task.clone()).await;
+                let new_uuid = load_job(bot.clone(), &sched, job_handler_task.clone(), registration_tx, query_registration_tx.subscribe()).await;
 
                 // insert new job uuid
                 loaded_user_data.insert(
@@ -683,37 +718,49 @@ async fn init_task_scheduler(
                         job_handler_task.mensa_id.unwrap(),
                         job_handler_task.hour,
                         job_handler_task.minute,
+                        None,
                     ),
                 );
             }
             JobType::UpdateRegistration => {
-                log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{}: Changed: {} {}",
-                    job_handler_task.chat_id.unwrap(),
-                    if job_handler_task.mensa_id.is_some() {"Mensa-ID"} else {""},
-                    if job_handler_task.hour.is_some() {"Time"} else {""},
-                );
+                if job_handler_task.mensa_id.is_some() {
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed Mensa", job_handler_task.chat_id.unwrap());
+                }
+                if job_handler_task.hour.is_some() {
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed time", job_handler_task.chat_id.unwrap());
+                }
 
                 if let Some(previous_registration) =
                     loaded_user_data.get(&job_handler_task.chat_id.unwrap())
                 {
+                    let mensa_id = if job_handler_task.mensa_id.is_some() {
+                        job_handler_task.mensa_id.unwrap()
+                    } else {
+                        previous_registration.1
+                    };
+
+                    let new_job_task = JobHandlerTask {
+                        job_type: JobType::UpdateRegistration,
+                        chat_id: job_handler_task.chat_id,
+                        mensa_id: Some(mensa_id),
+                        hour: job_handler_task.hour,
+                        minute: job_handler_task.minute,
+                        callback_id: None,
+                    };
+
                     let new_uuid =
+                        // new time was passed -> unload old job, load new
                         if job_handler_task.hour.is_some() || job_handler_task.minute.is_some() {
                             if let Some(uuid) = previous_registration.0 {
                                 // unload old job if exists
                                 sched.context.job_delete_tx.send(uuid).unwrap();
                             }
                             // load new job, return uuid
-                            load_job(bot.clone(), &sched, job_handler_task.clone()).await
+                            load_job(bot.clone(), &sched, new_job_task.clone(), registration_tx, query_registration_tx.subscribe()).await
                         } else {
                             // no new time was set -> return old job uuid
                             previous_registration.0
                         };
-
-                    let mensa_id = if job_handler_task.mensa_id.is_some() {
-                        job_handler_task.mensa_id.unwrap()
-                    } else {
-                        previous_registration.1
-                    };
 
                     loaded_user_data.insert(
                         job_handler_task.chat_id.unwrap(),
@@ -722,6 +769,7 @@ async fn init_task_scheduler(
                             mensa_id,
                             job_handler_task.hour,
                             job_handler_task.minute,
+                            None,
                         ),
                     );
 
@@ -729,6 +777,12 @@ async fn init_task_scheduler(
                     update_db_row(&job_handler_task).unwrap();
                 } else {
                     log::error!("Tried to update non-existent job");
+                    bot.send_message(
+                        ChatId(job_handler_task.chat_id.unwrap()),
+                        "Bitte zuerst /start ausführen",
+                    )
+                    .await
+                    .unwrap();
                 }
             }
 
@@ -750,7 +804,7 @@ async fn init_task_scheduler(
                 // kill uuid from this thing
                 loaded_user_data.insert(
                     job_handler_task.chat_id.unwrap(),
-                    (None, previous_registration.1, None, None),
+                    (None, previous_registration.1, None, None, None),
                 );
 
                 // delete from db
@@ -766,6 +820,7 @@ async fn init_task_scheduler(
 
                 query_registration_tx.send(uuid_opt.copied()).unwrap();
             }
+
             JobType::BroadcastUpdate => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
                 for (chat_id, registration_data) in &loaded_user_data {
@@ -797,6 +852,12 @@ async fn init_task_scheduler(
                         }
                     }
                 }
+            }
+            JobType::InsertCallbackMessageId => {
+                let regist = loaded_user_data
+                    .get_mut(&job_handler_task.chat_id.unwrap())
+                    .unwrap();
+                regist.4 = job_handler_task.callback_id;
             }
         }
     }
