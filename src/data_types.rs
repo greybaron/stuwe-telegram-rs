@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use teloxide::types::MessageId;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -21,7 +20,7 @@ pub struct JobHandlerTask {
     pub mensa_id: Option<u8>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
-    pub callback_id: Option<MessageId>,
+    pub callback_id: Option<i32>,
 }
 
 // opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
@@ -30,7 +29,7 @@ pub type RegistrationEntry = (
     u8,
     Option<u32>,
     Option<u32>,
-    Option<MessageId>,
+    Option<i32>,
 );
 
 #[derive(Error, Debug, Clone)]
