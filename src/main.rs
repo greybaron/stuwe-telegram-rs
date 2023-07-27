@@ -10,7 +10,7 @@ use rusqlite::{params, Connection, Result};
 use std::{collections::HashMap, env, error::Error, time::Instant};
 use teloxide::{
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Me, ParseMode},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, Me, MessageId, ParseMode},
     utils::{command::BotCommands, markdown},
 };
 use tokio::sync::broadcast;
@@ -176,13 +176,15 @@ async fn callback_handler(
                     _ = bot.edit_message_reply_markup(chat.id, id).await;
 
                     let days_forward = arg.parse::<i64>().unwrap();
+                    let day_str =
+                        ["Heute", "Morgen", "Übermorgen"][usize::try_from(days_forward).unwrap()];
 
                     let now = Instant::now();
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
 
                     if let Some(registration) = query_registration_rx.recv().await.unwrap() {
                         let text = build_meal_message(days_forward, registration.1).await;
-                        log::debug!("Build Heute msg: {:.2?}", now.elapsed());
+                        log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
                         let keyboard = make_days_keyboard();
@@ -191,7 +193,7 @@ async fn callback_handler(
                             .parse_mode(ParseMode::MarkdownV2)
                             .reply_markup(keyboard)
                             .await?;
-                        log::debug!("Send heute msg: {:.2?}", now.elapsed());
+                        log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
 
                         let task = JobHandlerTask {
                             job_type: JobType::InsertCallbackMessageId,
@@ -199,9 +201,9 @@ async fn callback_handler(
                             mensa_id: None,
                             hour: None,
                             minute: None,
-                            callback_id: Some(msg.id),
+                            callback_id: Some(msg.id.0),
                         };
-
+                        update_db_row(&task).unwrap();
                         registration_tx.send(task).unwrap();
                     } else {
                         bot.send_message(chat.id, "Bitte zuerst /start ausführen")
@@ -258,7 +260,7 @@ async fn command_handler(
                 let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                 if let Some(callback_id) = prev_reg.4 {
                     _ = bot
-                        .edit_message_reply_markup(msg.chat.id, callback_id)
+                        .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
                         .await;
                 }
 
@@ -286,7 +288,7 @@ async fn command_handler(
                     let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                     if let Some(callback_id) = prev_reg.4 {
                         _ = bot
-                            .edit_message_reply_markup(msg.chat.id, callback_id)
+                            .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
                             .await;
                     }
 
@@ -297,8 +299,9 @@ async fn command_handler(
                         mensa_id: None,
                         hour: None,
                         minute: None,
-                        callback_id: Some(msg.id),
+                        callback_id: Some(msg.id.0),
                     };
+                    update_db_row(&task).unwrap();
                     registration_tx.send(task).unwrap();
                 } else {
                     // every user has a registration (starting the chat always calls /start)
@@ -308,9 +311,6 @@ async fn command_handler(
                     bot.send_message(msg.chat.id, NO_DB_MSG).await?;
                 }
             }
-            // Ok(Command::Heute | Command::Morgen | Command::Uebermorgen) => {
-            //     println!("ACHTUNG DER KINDERFÄNGER");
-            // }
             Ok(Command::Start) => {
                 let keyboard = make_mensa_keyboard(mensen, false);
                 bot.send_message(msg.chat.id, "Mensa auswählen:")
@@ -519,6 +519,14 @@ fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
         )
         .unwrap();
 
+    let mut upd_cb_stmt = conn
+        .prepare_cached(
+            "UPDATE registrations
+            SET last_callback_id = ?2
+            WHERE chat_id = ?1",
+        )
+        .unwrap();
+
     if let Some(mensa_id) = data.mensa_id {
         update_mensa_stmt.execute(params![data.chat_id, mensa_id])?;
     };
@@ -529,6 +537,10 @@ fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
 
     if let Some(minute) = data.minute {
         upd_min_stmt.execute(params![data.chat_id, minute])?;
+    };
+
+    if let Some(callback_id) = data.callback_id {
+        upd_cb_stmt.execute([data.chat_id, Some(callback_id.into())])?;
     };
 
     Ok(())
@@ -559,7 +571,8 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
         chat_id integer not null unique primary key,
         mensa_id integer not null,
         hour integer,
-        minute integer
+        minute integer,
+        last_callback_id integer
     )",
     )
     .unwrap()
@@ -567,7 +580,9 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     .unwrap();
 
     let mut stmt = conn
-        .prepare_cached("SELECT chat_id, mensa_id, hour, minute FROM registrations")
+        .prepare_cached(
+            "SELECT chat_id, mensa_id, hour, minute, last_callback_id FROM registrations",
+        )
         .unwrap();
 
     let job_iter = stmt
@@ -578,7 +593,7 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
                 mensa_id: row.get(1)?,
                 hour: row.get(2)?,
                 minute: row.get(3)?,
-                callback_id: None,
+                callback_id: row.get(4)?,
             })
         })
         .unwrap();
@@ -641,7 +656,10 @@ async fn load_job(
                 let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                 if let Some(callback_id) = prev_reg.4 {
                     _ = bot
-                        .edit_message_reply_markup(ChatId(task.chat_id.unwrap()), callback_id)
+                        .edit_message_reply_markup(
+                            ChatId(task.chat_id.unwrap()),
+                            MessageId(callback_id),
+                        )
                         .await;
                 };
 
@@ -652,9 +670,9 @@ async fn load_job(
                     mensa_id: None,
                     hour: None,
                     minute: None,
-                    callback_id: Some(msg.id),
+                    callback_id: Some(msg.id.0),
                 };
-
+                update_db_row(&task).unwrap();
                 registration_tx.send(task).unwrap();
             })
         },
@@ -729,7 +747,13 @@ async fn init_task_scheduler(
         .await;
         loaded_user_data.insert(
             task.chat_id.unwrap(),
-            (uuid, task.mensa_id.unwrap(), task.hour, task.minute, None),
+            (
+                uuid,
+                task.mensa_id.unwrap(),
+                task.hour,
+                task.minute,
+                task.callback_id,
+            ),
         );
     }
 
