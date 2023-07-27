@@ -52,7 +52,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         None
     };
 
-    let emojis = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "🍽️", "☝🏻", "🌤️"];
+    let emojis = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "☝🏻", "🌤️", "🥦"];
     let rand_emoji = emojis[rand::thread_rng().gen_range(0..emojis.len())];
     msg += &format!(
         "{} {}{} {}\n",

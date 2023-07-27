@@ -165,13 +165,15 @@ async fn callback_handler(
                 }
                 "day" => {
                     // sometimes fails if you really spam those buttons, because two callbacks cant edit the
-                    // message simultaneously. But who cares, since both callbacks will just remove the buttons
-                    // _ = bot.edit_message_reply_markup(chat.id, id).await;
+                    // message simultaneously. But who cares, since both callbacks will just remove the same buttons
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
                     let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                     if let Some(callback_id) = prev_reg.4 {
+                        // also try to edit callback
                         _ = bot.edit_message_reply_markup(chat.id, callback_id).await;
                     }
+                    // also try to remove answered query anyway, as a fallback (the more the merrier)
+                    _ = bot.edit_message_reply_markup(chat.id, id).await;
 
                     let days_forward = arg.parse::<i64>().unwrap();
 
@@ -635,7 +637,7 @@ async fn load_job(
                 registration_tx
                     .send(make_query_data(task.chat_id.unwrap()))
                     .unwrap();
-                
+
                 let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                 if let Some(callback_id) = prev_reg.4 {
                     _ = bot
@@ -912,6 +914,15 @@ async fn init_task_scheduler(
                         {
                             log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
 
+                            // delete old callback buttons (heute/morgen/ueb)
+                            if let Some(callback_id) = registration_data.4 {
+                                _ = bot
+                                    .edit_message_reply_markup(
+                                        ChatId(*chat_id),
+                                        callback_id,
+                                    )
+                                    .await;
+                            };
                             bot.send_message(
                                 ChatId(*chat_id),
                                 format!(

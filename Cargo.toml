@@ -25,6 +25,9 @@ scraper = "0.17.1"
 selectors = "0.25.0"
 rand = "0.8.5"
 
+[features]
+mensimates = []
+
 [profile.release]
 strip = true
 codegen-units = 1
