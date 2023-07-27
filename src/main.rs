@@ -1,7 +1,14 @@
+mod data_backend;
 mod data_types;
+
 use data_types::{JobHandlerTask, JobType, RegistrationEntry, TimeParseError};
-mod stuwe_parser;
-use stuwe_parser::{build_meal_message, update_cache};
+cfg_if! {
+    if #[cfg(feature = "mensimates")] {
+        use data_backend::mm_parser::build_meal_message;
+    } else {
+        use data_backend::stuwe_parser::{build_meal_message, update_cache};
+    }
+}
 
 use chrono::Timelike;
 use log::log_enabled;
@@ -17,6 +24,8 @@ use tokio::sync::broadcast;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
+#[macro_use]
+extern crate cfg_if;
 #[macro_use]
 extern crate lazy_static;
 
@@ -170,7 +179,9 @@ async fn callback_handler(
                     let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                     if let Some(callback_id) = prev_reg.4 {
                         // also try to edit callback
-                        _ = bot.edit_message_reply_markup(chat.id, MessageId(callback_id)).await;
+                        _ = bot
+                            .edit_message_reply_markup(chat.id, MessageId(callback_id))
+                            .await;
                     }
                     // also try to remove answered query anyway, as a fallback (the more the merrier)
                     _ = bot.edit_message_reply_markup(chat.id, id).await;
@@ -693,45 +704,48 @@ async fn init_task_scheduler(
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
     mensen: HashMap<&str, u8>,
 ) {
+    let mensen_ids: Vec<u8> = mensen.values().copied().collect();
+    let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db();
     let sched = JobScheduler::new().await.unwrap();
 
-    let mensen_ids = mensen.values().copied().collect();
-
     // always update cache on startup
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    update_cache(&mensen_ids).await;
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
+    cfg_if! {
+        if #[cfg(not(feature = "mensimates"))] {
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
+            update_cache(&mensen_ids).await;
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
-    let registr_tx_loadjob = registration_tx.clone();
+            // run cache update every 5 minutes
+            
+            let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
-    // run cache update every 5 minutes
-    let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
-        log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
+                let registration_tx = registration_tx.clone();
 
-        let registration_tx = registration_tx.clone();
+                let mensen_ids = mensen_ids.clone();
+                Box::pin(async move {
+                    let registration_tx = registration_tx.clone();
+                    let today_changed_mensen = update_cache(&mensen_ids).await;
 
-        let mensen_ids = mensen_ids.clone();
-        Box::pin(async move {
-            let registration_tx = registration_tx.clone();
-            let today_changed_mensen = update_cache(&mensen_ids).await;
-
-            for mensa in today_changed_mensen {
-                registration_tx
-                    .send(JobHandlerTask {
-                        job_type: JobType::BroadcastUpdate,
-                        chat_id: None,
-                        mensa_id: Some(mensa),
-                        hour: None,
-                        minute: None,
-                        callback_id: None,
-                    })
-                    .unwrap();
-            }
-        })
-    })
-    .unwrap();
-    sched.add(cache_and_broadcast_job).await.unwrap();
+                    for mensa in today_changed_mensen {
+                        registration_tx
+                            .send(JobHandlerTask {
+                                job_type: JobType::BroadcastUpdate,
+                                chat_id: None,
+                                mensa_id: Some(mensa),
+                                hour: None,
+                                minute: None,
+                                callback_id: None,
+                            })
+                            .unwrap();
+                    }
+                })
+            })
+            .unwrap();
+            sched.add(cache_and_broadcast_job).await.unwrap();
+        }
+    }
 
     for task in tasks_from_db {
         let bot = bot.clone();

@@ -24,6 +24,7 @@ reqwest = "0.11.18"
 scraper = "0.17.1"
 selectors = "0.25.0"
 rand = "0.8.5"
+cfg-if = "1.0.0"
 
 [features]
 mensimates = []

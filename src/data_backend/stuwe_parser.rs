@@ -1,4 +1,4 @@
-use crate::data_types::{MealGroup, MealsForDay, SingleMeal};
+use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;

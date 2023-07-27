@@ -1,4 +1,6 @@
-use serde::{Deserialize, Serialize};
+pub mod stuwe_data_types;
+pub mod mm_data_types;
+
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -38,24 +40,4 @@ pub enum TimeParseError {
     NoTimePassed,
     #[error("Zeit konnte nicht gelesen werden")]
     InvalidTimePassed,
-}
-
-// used for stuwe parser/message generator
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MealsForDay {
-    pub date: String,
-    pub meal_groups: Vec<MealGroup>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct MealGroup {
-    pub meal_type: String,
-    pub sub_meals: Vec<SingleMeal>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct SingleMeal {
-    pub name: String,
-    pub additional_ingredients: Vec<String>,
-    pub price: String,
 }
