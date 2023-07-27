@@ -170,7 +170,7 @@ async fn callback_handler(
                     let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
                     if let Some(callback_id) = prev_reg.4 {
                         // also try to edit callback
-                        _ = bot.edit_message_reply_markup(chat.id, callback_id).await;
+                        _ = bot.edit_message_reply_markup(chat.id, MessageId(callback_id)).await;
                     }
                     // also try to remove answered query anyway, as a fallback (the more the merrier)
                     _ = bot.edit_message_reply_markup(chat.id, id).await;
@@ -943,7 +943,7 @@ async fn init_task_scheduler(
                                 _ = bot
                                     .edit_message_reply_markup(
                                         ChatId(*chat_id),
-                                        callback_id,
+                                        MessageId(callback_id),
                                     )
                                     .await;
                             };
