@@ -1,3 +1,4 @@
+use crate::data_backend::{escape_markdown_v2, EMOJIS};
 use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
@@ -40,9 +41,6 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     let day_meals = get_meals(requested_date, mensa_location).await;
 
     // start message formatting
-    #[cfg(feature = "parser-cache-info")]
-    let now = Instant::now();
-
     // warn if requested "today" was raised to next monday (requested on sat/sun)
     let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
         Some(" (Morgen)")
@@ -52,8 +50,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
         None
     };
 
-    let emojis = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "☝🏻", "🌤️", "🥦"];
-    let rand_emoji = emojis[rand::thread_rng().gen_range(0..emojis.len())];
+    let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
         "{} {}{} {}\n",
         rand_emoji,
@@ -277,23 +274,6 @@ fn german_date_fmt(date: NaiveDate) -> String {
     output += &date.format("%d.%m.%Y").to_string();
 
     output
-}
-
-fn escape_markdown_v2(input: &str) -> String {
-    // all 'special' chars have to be escaped when using telegram markdown_v2
-
-    input
-        .replace('.', r"\.")
-        .replace('!', r"\!")
-        .replace('+', r"\+")
-        .replace('-', r"\-")
-        .replace('<', r"\<")
-        .replace('>', r"\>")
-        .replace('(', r"\(")
-        .replace(')', r"\)")
-        .replace('=', r"\=")
-        // workaround as '&' in html is improperly decoded
-        .replace("&amp;", "&")
 }
 
 pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {

@@ -59,7 +59,8 @@ async fn main() {
         ("Mensa Schönauer Straße", 140),
         ("Mensa Tierklinik", 170),
     ]);
-
+    
+    #[cfg(not(feature = "mensimates"))]
     let mensen_ts = mensen.clone();
 
     if !log_enabled!(log::Level::Debug) {
@@ -97,6 +98,7 @@ async fn main() {
             job_rx,
             query_registration_tx_ts,
             loaded_user_data,
+            #[cfg(not(feature = "mensimates"))]
             mensen_ts,
         )
         .await;
@@ -484,7 +486,7 @@ fn make_days_keyboard() -> InlineKeyboardMarkup {
 }
 
 fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("../../jobs.db")?;
+    let conn = Connection::open("jobs.db")?;
     let mut stmt = conn
         .prepare_cached(
             "replace into registrations (chat_id, mensa_id, hour, minute)
@@ -503,7 +505,7 @@ fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
 
 // fn update_db_row(chat_id: i64, mensa_id: Option<u8>, hour: Option<u32>, minute: Option<u32>) -> rusqlite::Result<()> {
 fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("../../jobs.db")?;
+    let conn = Connection::open("jobs.db")?;
 
     // could be better but eh
     let mut update_mensa_stmt = conn
@@ -558,7 +560,7 @@ fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
 }
 
 fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
-    let conn = Connection::open("../../jobs.db")?;
+    let conn = Connection::open("jobs.db")?;
     let mut stmt = conn
         .prepare_cached(
             "UPDATE registrations
@@ -574,7 +576,7 @@ fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
 
 fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
-    let conn = Connection::open("../../jobs.db").unwrap();
+    let conn = Connection::open("jobs.db").unwrap();
 
     // ensure db table exists
     conn.prepare(
@@ -702,9 +704,9 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
+    #[cfg(not(feature = "mensimates"))]
     mensen: HashMap<&str, u8>,
 ) {
-    let mensen_ids: Vec<u8> = mensen.values().copied().collect();
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db();
     let sched = JobScheduler::new().await.unwrap();
@@ -713,6 +715,7 @@ async fn init_task_scheduler(
     cfg_if! {
         if #[cfg(not(feature = "mensimates"))] {
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
+            let mensen_ids: Vec<u8> = mensen.values().copied().collect();
             update_cache(&mensen_ids).await;
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
@@ -935,6 +938,7 @@ async fn init_task_scheduler(
                 query_registration_tx.send(uuid_opt.copied()).unwrap();
             }
 
+            #[cfg(not(feature = "mensimates"))]
             JobType::BroadcastUpdate => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
                 for (chat_id, registration_data) in &loaded_user_data {
@@ -976,6 +980,8 @@ async fn init_task_scheduler(
                     }
                 }
             }
+            
+            
             JobType::InsertCallbackMessageId => {
                 let mut regist = *loaded_user_data
                     .get(&job_handler_task.chat_id.unwrap())

@@ -1,5 +1,10 @@
-pub mod stuwe_data_types;
-pub mod mm_data_types;
+cfg_if! {
+    if #[cfg(feature = "mensimates")] {
+        pub mod mm_data_types;
+    } else {
+        pub mod stuwe_data_types;
+    }
+}
 
 use thiserror::Error;
 use uuid::Uuid;
@@ -11,6 +16,7 @@ pub enum JobType {
     Unregister,
     QueryRegistration,
     UpdateRegistration,
+    #[cfg(not(feature = "mensimates"))]
     BroadcastUpdate,
     InsertCallbackMessageId,
 }
@@ -26,13 +32,7 @@ pub struct JobHandlerTask {
 }
 
 // opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
-pub type RegistrationEntry = (
-    Option<Uuid>,
-    u8,
-    Option<u32>,
-    Option<u32>,
-    Option<i32>,
-);
+pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<i32>);
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {
