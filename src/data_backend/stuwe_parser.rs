@@ -1,4 +1,4 @@
-use crate::data_backend::{escape_markdown_v2, EMOJIS};
+use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
@@ -257,23 +257,6 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> Stri
         "location={}&date={:04}-{:02}-{:02}",
         mensa_location, year, month, day
     )
-}
-
-fn german_date_fmt(date: NaiveDate) -> String {
-    let mut output = String::new();
-
-    let week_days = [
-        "Montag, ",
-        "Dienstag, ",
-        "Mittwoch, ",
-        "Donnerstag, ",
-        "Freitag, ",
-    ];
-
-    output += week_days[date.weekday().num_days_from_monday() as usize];
-    output += &date.format("%d.%m.%Y").to_string();
-
-    output
 }
 
 pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {

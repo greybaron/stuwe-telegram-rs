@@ -1,7 +1,7 @@
-use crate::data_backend::{escape_markdown_v2, EMOJIS};
+use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::mm_data_types::MealGroup;
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
+use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 use rand::Rng;
 use teloxide::utils::markdown;
 
@@ -193,21 +193,4 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Optio
         }
         None => None,
     }
-}
-
-fn german_date_fmt(date: NaiveDate) -> String {
-    let week_days = [
-        "Montag, ",
-        "Dienstag, ",
-        "Mittwoch, ",
-        "Donnerstag, ",
-        "Freitag, ",
-    ];
-
-    format!(
-        "{}, {}",
-        week_days[date.weekday().num_days_from_monday() as usize],
-        date.format("%d.%m.%Y")
-    )
-    .to_string()
 }
