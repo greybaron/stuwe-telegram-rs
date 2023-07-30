@@ -3,3 +3,4 @@ jobs.db
 /cached_data
 .cargo/
 build.sh
+Cargo.tomlnsp
