@@ -178,25 +178,26 @@ async fn callback_handler(
                     // sometimes fails if you really spam those buttons, because two callbacks cant edit the
                     // message simultaneously. But who cares, since both callbacks will just remove the same buttons
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-                    if let Some(callback_id) = prev_reg.4 {
-                        // also try to edit callback
-                        _ = bot
-                            .edit_message_reply_markup(chat.id, MessageId(callback_id))
-                            .await;
-                    }
-                    // also try to remove answered query anyway, as a fallback (the more the merrier)
-                    _ = bot.edit_message_reply_markup(chat.id, id).await;
+                    let prev_reg_opt = query_registration_rx.recv().await.unwrap();
+                    if let Some(prev_registration) = prev_reg_opt {
+                        if let Some(callback_id) = prev_registration.4 {
+                            // also try to edit callback
+                            _ = bot
+                                .edit_message_reply_markup(chat.id, MessageId(callback_id))
+                                .await;
+                        }
 
-                    let days_forward = arg.parse::<i64>().unwrap();
-                    let day_str =
-                        ["Heute", "Morgen", "Übermorgen"][usize::try_from(days_forward).unwrap()];
+                        // also try to remove answered query anyway, as a fallback (the more the merrier)
+                        _ = bot.edit_message_reply_markup(chat.id, id).await;
 
-                    let now = Instant::now();
-                    registration_tx.send(make_query_data(chat.id.0)).unwrap();
+                        // start building message
+                        let now = Instant::now();
 
-                    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                        let text = build_meal_message(days_forward, registration.1).await;
+                        let days_forward = arg.parse::<i64>().unwrap();
+                        let day_str = ["Heute", "Morgen", "Übermorgen"]
+                            [usize::try_from(days_forward).unwrap()];
+
+                        let text = build_meal_message(days_forward, prev_registration.1).await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 

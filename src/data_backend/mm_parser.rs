@@ -149,8 +149,8 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
 
                     let meal_group = meal_group.1;
 
-                    let first_price = meal_group.first().unwrap().price.clone();
-                    let price_is_shared = meal_group.iter().all(|item| item.price == first_price);
+                    let price_first_meal = meal_group.first().unwrap().price.clone();
+                    let price_is_shared = meal_group.iter().all(|item| item.price == price_first_meal);
 
                     for meal in meal_group {
                         msg += &format!(" • {}\n", markdown::underline(&meal.name));
@@ -170,7 +170,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
                     }
 
                     if price_is_shared {
-                        msg += &format!("  {}\n", first_price);
+                        msg += &format!("   {}\n", price_first_meal);
                     }
                 }
             }
