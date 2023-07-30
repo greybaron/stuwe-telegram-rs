@@ -264,7 +264,7 @@ async fn command_handler(
                     Command::Heute => 0,
                     Command::Morgen => 1,
                     Command::Uebermorgen => 2,
-                    _ => panic!("not gonna happen"),
+                    _ => panic!(),
                 };
 
                 let now = Instant::now();
