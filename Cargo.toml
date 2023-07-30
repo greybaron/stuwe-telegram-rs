@@ -17,6 +17,7 @@ regex = { version = "1.9.1", default-features = false }
 lazy_static = "1.4.0"
 uuid = "1.4.0"
 hashmap = "0.0.1"
+openssl = { version = "*", features = ["vendored"] }
 thiserror = "1.0.43"
 serde = { version = "1.0.171", features = ["derive"] }
 serde_json = "1.0.102"
@@ -34,3 +35,4 @@ mensimates = []
 strip = true
 codegen-units = 1
 lto = true
+opt-level = "z"
