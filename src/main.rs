@@ -335,7 +335,7 @@ async fn command_handler(
                         .reply_markup(keyboard)
                         .await?;
                 } else {
-                    bot.send_message(msg.chat.id, "NO_DB_MSG").await?;
+                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
                 }
             }
             Ok(Command::Subscribe) => {
@@ -373,7 +373,7 @@ async fn command_handler(
                         registration_tx.send(registration_job).unwrap();
                     }
                 } else {
-                    bot.send_message(msg.chat.id, "NO_DB_MSG").await?;
+                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
                 }
             }
 
@@ -406,7 +406,7 @@ async fn command_handler(
                             .unwrap();
                     }
                 } else {
-                    bot.send_message(msg.chat.id, "NO_DB_MSG").await?;
+                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
                 }
             }
             Ok(Command::Uhrzeit) => {
@@ -438,7 +438,7 @@ async fn command_handler(
                         }
                     };
                 } else {
-                    bot.send_message(msg.chat.id, "NO_DB_MSG").await?;
+                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
                 }
             }
             Err(_) => {
