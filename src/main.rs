@@ -59,7 +59,7 @@ async fn main() {
         ("Mensa Schönauer Straße", 140),
         ("Mensa Tierklinik", 170),
     ]);
-    
+
     #[cfg(not(feature = "mensimates"))]
     let mensen_ts = mensen.clone();
 
@@ -267,22 +267,17 @@ async fn command_handler(
                     _ => panic!("not gonna happen"),
                 };
 
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-                let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-                if let Some(callback_id) = prev_reg.4 {
-                    _ = bot
-                        .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
-                        .await;
-                }
-
                 let now = Instant::now();
                 registration_tx
                     .send(make_query_data(msg.chat.id.0))
                     .unwrap();
 
                 if let Some(registration) = query_registration_rx.recv().await.unwrap() {
+                    if let Some(callback_id) = registration.4 {
+                        _ = bot
+                            .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
+                            .await;
+                    }
                     let text = build_meal_message(days_forward, registration.1).await;
                     log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
                     let now = Instant::now();
@@ -704,8 +699,7 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
-    #[cfg(not(feature = "mensimates"))]
-    mensen: HashMap<&str, u8>,
+    #[cfg(not(feature = "mensimates"))] mensen: HashMap<&str, u8>,
 ) {
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db();
@@ -720,7 +714,7 @@ async fn init_task_scheduler(
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
             // run cache update every 5 minutes
-            
+
             let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
                 log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
@@ -980,8 +974,7 @@ async fn init_task_scheduler(
                     }
                 }
             }
-            
-            
+
             JobType::InsertCallbackMessageId => {
                 let mut regist = *loaded_user_data
                     .get(&job_handler_task.chat_id.unwrap())
