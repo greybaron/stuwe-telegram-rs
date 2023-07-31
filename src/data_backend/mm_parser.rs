@@ -11,7 +11,7 @@ async fn mm_json_request(day: DateTime<Local>, mensa_id: u8) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
     let req_now = Instant::now();
-    let mm_json = get_mensimates_json(&date, &mensa).await;
+    let mm_json = get_mensimates_json(&mensa, &date).await;
     log::debug!("got MM json after {:.2?}", req_now.elapsed());
 
     mm_json
@@ -42,7 +42,8 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
     (date, mensa)
 }
 
-async fn get_mensimates_json(date: &str, mensa: &str) -> Option<String> {
+async fn get_mensimates_json(mensa: &str, date: &str) -> Option<String> {
+    println!("https://api.olech2412.de/mensaHub/{}/servingDate/{}", mensa, date);
     let mut map = HashMap::new();
 
     map.insert("apiUsername", "apiuser_telegram");
