@@ -25,7 +25,7 @@ async fn get_jwt_token() -> String {
 }
 
 pub async fn refresh_jwt_db() -> rusqlite::Result<()> {
-    log::info!(target: "stuwe_telegram_rs::mm_parser", "Updating JWT token");
+    log::debug!(target: "stuwe_telegram_rs::mm_parser", "Updating JWT token");
     let token = get_jwt_token().await;
 
     let conn = Connection::open("jobs.db")?;
