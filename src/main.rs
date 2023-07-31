@@ -481,6 +481,22 @@ fn make_days_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new(keyboard)
 }
 
+fn save_jwt_db(token: &str) -> rusqlite::Result<()> {
+    let conn = Connection::open("jobs.db")?;
+    let mut stmt = conn
+    .prepare_cached(
+        "delete from jwt;
+        insert into jwt (token)
+        values (?1, ?2)"
+    )
+    .unwrap();
+    println!("{}", token);
+    stmt.execute(params![
+        token,
+    ])?;
+    Ok(())
+}
+
 fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
     let conn = Connection::open("jobs.db")?;
     let mut stmt = conn
@@ -582,7 +598,17 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
         hour integer,
         minute integer,
         last_callback_id integer
-    )",
+        )",
+    )
+    .unwrap()
+    .execute([])
+    .unwrap();
+
+    // ensure db table exists
+    conn.prepare(
+        "create table if not exists jwt (
+            token text
+        )",
     )
     .unwrap()
     .execute([])
@@ -709,6 +735,7 @@ async fn init_task_scheduler(
     // always update cache on startup
     cfg_if! {
         if #[cfg(not(feature = "mensimates"))] {
+            // if default, start caching every 5 minutes and cache once at startup
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
             let mensen_ids: Vec<u8> = mensen.values().copied().collect();
             update_cache(&mensen_ids).await;
@@ -743,7 +770,22 @@ async fn init_task_scheduler(
             .unwrap();
             sched.add(cache_and_broadcast_job).await.unwrap();
         } else {
-            
+            // if mensimates, create job to reload token every minute
+            let jwt_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating JWT token");
+
+                Box::pin(async move {
+                    println!("mama ich bin im fernsehen");
+                    let token = jwt_bruder().await;
+                    println!("{}", token);
+
+                    save_jwt_db(&token).unwrap();
+
+
+                })
+            })
+            .unwrap();
+            sched.add(jwt_job).await.unwrap();
         }
     }
 

@@ -8,8 +8,8 @@ use teloxide::utils::markdown;
 use std::{collections::HashMap, time::Instant};
 
 
-use tokio::sync::mpsc;
-pub async fn jwt_bruder(mut query_rx: mpsc::Receiver<bool>, token_tx: mpsc) {
+// use tokio::sync::mpsc;
+pub async fn jwt_bruder() -> String {
     println!("jwt bruder started");
     let client = reqwest::Client::new();
     let mut map = HashMap::new();
@@ -18,28 +18,29 @@ pub async fn jwt_bruder(mut query_rx: mpsc::Receiver<bool>, token_tx: mpsc) {
     map.insert("password", "telegrambesser");
 
     
+    // let login_resp = client
+    //     .post("https://api.olech2412.de/mensaHub/auth/login")
+    //     .json(&map)
+    //     .send()
+    //     .await;
+    
+    // let mut token = login_resp.unwrap().text().await.unwrap();
+    // let mut time = Instant::now();
+
+    // while let Some(query) = query_rx.recv().await {
+    //     // check if time is longer than 1 minute ago
+    //     if time.elapsed().as_secs() > 118 {
     let login_resp = client
         .post("https://api.olech2412.de/mensaHub/auth/login")
         .json(&map)
         .send()
         .await;
+    // token = login_resp.unwrap().text().await.unwrap();
+    // time = Instant::now();
     
-    let mut token = login_resp.unwrap().text().await.unwrap();
-    let mut time = Instant::now();
-
-    while let Some(query) = query_rx.recv().await {
-        // check if time is longer than 1 minute ago
-        if time.elapsed().as_secs() > 118 {
-            let login_resp = client
-                .post("https://api.olech2412.de/mensaHub/auth/login")
-                .json(&map)
-                .send()
-                .await;
-            token = login_resp.unwrap().text().await.unwrap();
-            time = Instant::now();
-        }
-    }
-
+    //     }
+    // }
+    login_resp.unwrap().text().await.unwrap()
 
 
 }
@@ -80,7 +81,6 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
 }
 
 async fn get_mensimates_json(mensa: &str, date: &str) -> Option<String> {
-    println!("https://api.olech2412.de/mensaHub/{}/servingDate/{}", mensa, date);
     let mut map = HashMap::new();
 
     map.insert("apiUsername", "apiuser_telegram");
