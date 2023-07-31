@@ -4,7 +4,7 @@ mod data_types;
 use data_types::{JobHandlerTask, JobType, RegistrationEntry, TimeParseError};
 cfg_if! {
     if #[cfg(feature = "mensimates")] {
-        use data_backend::mm_parser::{build_meal_message, jwt_bruder};
+        use data_backend::mm_parser::{build_meal_message, refresh_jwt_db};
     } else {
         use data_backend::stuwe_parser::{build_meal_message, update_cache};
     }
@@ -481,22 +481,6 @@ fn make_days_keyboard() -> InlineKeyboardMarkup {
     InlineKeyboardMarkup::new(keyboard)
 }
 
-fn save_jwt_db(token: &str) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
-    let mut stmt = conn
-    .prepare_cached(
-        "delete from jwt;
-        insert into jwt (token)
-        values (?1, ?2)"
-    )
-    .unwrap();
-    println!("{}", token);
-    stmt.execute(params![
-        token,
-    ])?;
-    Ok(())
-}
-
 fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
     let conn = Connection::open("jobs.db")?;
     let mut stmt = conn
@@ -771,16 +755,12 @@ async fn init_task_scheduler(
             sched.add(cache_and_broadcast_job).await.unwrap();
         } else {
             // if mensimates, create job to reload token every minute
+            // reload now
+            refresh_jwt_db().await.unwrap();
+
             let jwt_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
-                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating JWT token");
-
                 Box::pin(async move {
-                    println!("mama ich bin im fernsehen");
-                    let token = jwt_bruder().await;
-                    println!("{}", token);
-
-                    save_jwt_db(&token).unwrap();
-
+                    refresh_jwt_db().await.unwrap();
 
                 })
             })

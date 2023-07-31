@@ -3,46 +3,53 @@ use crate::data_types::mm_data_types::MealGroup;
 
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 use rand::Rng;
+use rusqlite::{params, Connection};
 use teloxide::utils::markdown;
 
 use std::{collections::HashMap, time::Instant};
 
-
-// use tokio::sync::mpsc;
-pub async fn jwt_bruder() -> String {
-    println!("jwt bruder started");
+async fn get_jwt_token() -> String {
     let client = reqwest::Client::new();
     let mut map = HashMap::new();
 
     map.insert("apiUsername", "apiuser_telegram");
     map.insert("password", "telegrambesser");
 
-    
-    // let login_resp = client
-    //     .post("https://api.olech2412.de/mensaHub/auth/login")
-    //     .json(&map)
-    //     .send()
-    //     .await;
-    
-    // let mut token = login_resp.unwrap().text().await.unwrap();
-    // let mut time = Instant::now();
-
-    // while let Some(query) = query_rx.recv().await {
-    //     // check if time is longer than 1 minute ago
-    //     if time.elapsed().as_secs() > 118 {
     let login_resp = client
         .post("https://api.olech2412.de/mensaHub/auth/login")
         .json(&map)
         .send()
         .await;
-    // token = login_resp.unwrap().text().await.unwrap();
-    // time = Instant::now();
-    
-    //     }
-    // }
+
     login_resp.unwrap().text().await.unwrap()
+}
 
+pub async fn refresh_jwt_db() -> rusqlite::Result<()> {
+    log::info!(target: "stuwe_telegram_rs::mm_parser", "Updating JWT token");
+    let token = get_jwt_token().await;
 
+    let conn = Connection::open("jobs.db")?;
+
+    let mut del = conn.prepare_cached("delete from jwt")?;
+
+    let mut upd = conn.prepare_cached(
+        "replace into jwt (token)
+            values (?1)",
+    )?;
+
+    del.execute([])?;
+    upd.execute(params![token])?;
+    Ok(())
+}
+
+async fn get_jwt_db() -> rusqlite::Result<String> {
+    let conn = Connection::open("jobs.db")?;
+    let mut stmt = conn.prepare_cached("select token from jwt")?;
+    let mut rows = stmt.query([])?;
+    let row = rows.next()?.unwrap();
+    let token: String = row.get(0)?;
+
+    Ok(token)
 }
 
 async fn mm_json_request(day: DateTime<Local>, mensa_id: u8) -> Option<String> {
@@ -81,36 +88,21 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
 }
 
 async fn get_mensimates_json(mensa: &str, date: &str) -> Option<String> {
-    let mut map = HashMap::new();
-
-    map.insert("apiUsername", "apiuser_telegram");
-    map.insert("password", "telegrambesser");
-
     let client = reqwest::Client::new();
-    let login_resp = client
-        .post("https://api.olech2412.de/mensaHub/auth/login")
-        .json(&map)
+
+    let token = get_jwt_db().await.unwrap();
+
+    let response = client
+        .get(format!(
+            "https://api.olech2412.de/mensaHub/{}/servingDate/{}",
+            mensa, date
+        ))
+        .bearer_auth(&token)
         .send()
         .await;
 
-    match login_resp {
-        Ok(login_resp) => {
-            let token = login_resp.text().await.unwrap();
-
-            let response = client
-                .get(format!(
-                    "https://api.olech2412.de/mensaHub/{}/servingDate/{}",
-                    mensa, date
-                ))
-                .bearer_auth(&token)
-                .send()
-                .await;
-
-            match response {
-                Ok(t) => Some(t.text().await.unwrap()),
-                Err(_) => None,
-            }
-        }
+    match response {
+        Ok(t) => Some(t.text().await.unwrap()),
         Err(_) => None,
     }
 }
@@ -188,7 +180,8 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
                     let meal_group = meal_group.1;
 
                     let price_first_meal = meal_group.first().unwrap().price.clone();
-                    let price_is_shared = meal_group.iter().all(|item| item.price == price_first_meal);
+                    let price_is_shared =
+                        meal_group.iter().all(|item| item.price == price_first_meal);
 
                     for meal in meal_group {
                         msg += &format!(" • {}\n", markdown::underline(&meal.name));

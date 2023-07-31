@@ -66,7 +66,10 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     // loop over meal groups
     for meal_group in day_meals.meal_groups {
         let price_first_meal = meal_group.sub_meals.first().unwrap().price.clone();
-        let price_is_shared = meal_group.sub_meals.iter().all(|item| item.price == price_first_meal);
+        let price_is_shared = meal_group
+            .sub_meals
+            .iter()
+            .all(|item| item.price == price_first_meal);
 
         // Bold type of meal (-group)
         msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
