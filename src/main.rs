@@ -720,10 +720,10 @@ async fn init_task_scheduler(
     cfg_if! {
         if #[cfg(not(feature = "mensimates"))] {
             // if default, start caching every 5 minutes and cache once at startup
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
+            // log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
             let mensen_ids: Vec<u8> = mensen.values().copied().collect();
-            update_cache(&mensen_ids).await;
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
+            // update_cache(&mensen_ids).await;
+            // log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
             // run cache update every 5 minutes
 

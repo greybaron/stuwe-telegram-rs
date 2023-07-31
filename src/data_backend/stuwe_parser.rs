@@ -313,8 +313,8 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
             if let Some(mensa_id) = bruh.0 {
                 mensen_today_changed.push(mensa_id);
             }
-            log::debug!("sleeping 5s");
-            sleep(StdDuration::from_secs(5)).await;
+            log::debug!("sleeping 2s");
+            sleep(StdDuration::from_secs(2)).await;
             // handles.push(tokio::spawn(save_to_cache(*day, *mensa_id)))
         }
     }
