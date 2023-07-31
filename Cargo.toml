@@ -6,13 +6,13 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-openssl = { version = "*", features = ["vendored"] }
 teloxide = { version = "0.12", features = ["macros"] }
 log = "0.4"
 pretty_env_logger = "0.5"
 tokio = { version =  "1.8", features = ["rt-multi-thread", "macros"] }
 tokio-cron-scheduler = "*"
-rusqlite = { version = "0.29.0" }
+rusqlite = { version = "0.29.0", features = ["bundled"] }
+openssl = { version = "*", features = ["vendored"] }
 chrono = "0.4.26"
 regex = { version = "1.9.1", default-features = false }
 lazy_static = "1.4.0"
