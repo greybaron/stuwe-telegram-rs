@@ -4,7 +4,7 @@ mod data_types;
 use data_types::{JobHandlerTask, JobType, RegistrationEntry, TimeParseError};
 cfg_if! {
     if #[cfg(feature = "mensimates")] {
-        use data_backend::mm_parser::build_meal_message;
+        use data_backend::mm_parser::{build_meal_message, jwt_bruder};
     } else {
         use data_backend::stuwe_parser::{build_meal_message, update_cache};
     }
@@ -742,6 +742,8 @@ async fn init_task_scheduler(
             })
             .unwrap();
             sched.add(cache_and_broadcast_job).await.unwrap();
+        } else {
+            
         }
     }
 
