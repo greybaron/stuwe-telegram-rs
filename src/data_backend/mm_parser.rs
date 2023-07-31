@@ -7,6 +7,43 @@ use teloxide::utils::markdown;
 
 use std::{collections::HashMap, time::Instant};
 
+
+use tokio::sync::mpsc;
+pub async fn jwt_bruder(mut query_rx: mpsc::Receiver<bool>, token_tx: mpsc) {
+    println!("jwt bruder started");
+    let client = reqwest::Client::new();
+    let mut map = HashMap::new();
+
+    map.insert("apiUsername", "apiuser_telegram");
+    map.insert("password", "telegrambesser");
+
+    
+    let login_resp = client
+        .post("https://api.olech2412.de/mensaHub/auth/login")
+        .json(&map)
+        .send()
+        .await;
+    
+    let mut token = login_resp.unwrap().text().await.unwrap();
+    let mut time = Instant::now();
+
+    while let Some(query) = query_rx.recv().await {
+        // check if time is longer than 1 minute ago
+        if time.elapsed().as_secs() > 118 {
+            let login_resp = client
+                .post("https://api.olech2412.de/mensaHub/auth/login")
+                .json(&map)
+                .send()
+                .await;
+            token = login_resp.unwrap().text().await.unwrap();
+            time = Instant::now();
+        }
+    }
+
+
+
+}
+
 async fn mm_json_request(day: DateTime<Local>, mensa_id: u8) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
