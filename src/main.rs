@@ -727,7 +727,7 @@ async fn init_task_scheduler(
 
             // run cache update every 5 minutes
 
-            let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
+            let cache_and_broadcast_job = Job::new_async("0 1/10 * * * *", move |_uuid, mut _l| {
                 log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
                 let registration_tx = registration_tx.clone();

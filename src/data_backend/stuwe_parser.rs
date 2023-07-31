@@ -2,6 +2,7 @@ use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
+use std::time::Duration as StdDuration;
 use rand::Rng;
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
@@ -9,7 +10,7 @@ use teloxide::utils::markdown;
 use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
-use tokio::time::Instant;
+use tokio::time::{Instant, sleep};
 
 pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
@@ -302,23 +303,28 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
     }
 
     // add task handles to vec so that they can be awaited after spawing
-    let mut handles = Vec::new();
+    // let mut handles = Vec::new();
     let mut mensen_today_changed = Vec::new();
 
     for mensa_id in mensen {
         // spawning task for every day
         for day in &days {
-            handles.push(tokio::spawn(save_to_cache(*day, *mensa_id)))
+            let bruh = save_to_cache(*day, *mensa_id).await;
+            if let Some(mensa_id) = bruh.0 {
+                mensen_today_changed.push(mensa_id);
+            }
+            sleep(StdDuration::from_secs(5)).await;
+            // handles.push(tokio::spawn(save_to_cache(*day, *mensa_id)))
         }
     }
 
-    // let mut today_changed = false;
-    // awaiting results of every task
-    for handle in handles {
-        if let Some(mensa_id) = handle.await.unwrap().0 {
-            mensen_today_changed.push(mensa_id);
-        }
-    }
+    // // let mut today_changed = false;
+    // // awaiting results of every task
+    // for handle in handles {
+    //     if let Some(mensa_id) = handle.await.unwrap().0 {
+    //         mensen_today_changed.push(mensa_id);
+    //     }
+    // }
 
     mensen_today_changed
 }
