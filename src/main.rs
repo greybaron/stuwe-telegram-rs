@@ -14,6 +14,7 @@ use chrono::Timelike;
 use log::log_enabled;
 use regex::Regex;
 use rusqlite::{params, Connection, Result};
+use static_init::dynamic;
 use std::{collections::HashMap, env, error::Error, time::Instant};
 use teloxide::{
     prelude::*,
@@ -26,8 +27,6 @@ use uuid::Uuid;
 
 #[macro_use]
 extern crate cfg_if;
-#[macro_use]
-extern crate lazy_static;
 
 #[tokio::main]
 async fn main() {
@@ -1036,13 +1035,8 @@ enum Command {
 
 fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     if let Some(first_arg) = txt.split(' ').nth(1) {
-        lazy_static! {
-            static ref RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-        }
-
-        let now = Instant::now();
-        println!("m: {}", RE.is_match(first_arg));
-        println!("t: {:.2?}", now.elapsed());
+        #[dynamic]
+        static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
 
         if !RE.is_match(first_arg) {
             Err(TimeParseError::InvalidTimePassed)
