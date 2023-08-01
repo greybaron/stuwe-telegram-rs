@@ -25,7 +25,7 @@ tokio-cron-scheduler = "*"
 uuid = "1.4.0"
 
 [features]
-# default = ["mensimates"]
+default = ["mensimates"]
 mensimates = []
 
 [profile.release]

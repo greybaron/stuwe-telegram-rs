@@ -3,12 +3,13 @@ use crate::data_types::mm_data_types::MealGroup;
 
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 use rand::Rng;
-use rusqlite::{params, Connection};
 use teloxide::utils::markdown;
+use tokio::sync::RwLock;
 
+use std::sync::Arc;
 use std::{collections::HashMap, time::Instant};
 
-async fn get_jwt_token() -> String {
+pub async fn get_jwt_token() -> String {
     let client = reqwest::Client::new();
     let mut map = HashMap::new();
 
@@ -24,39 +25,11 @@ async fn get_jwt_token() -> String {
     login_resp.unwrap().text().await.unwrap()
 }
 
-pub async fn refresh_jwt_db() -> rusqlite::Result<()> {
-    log::debug!(target: "stuwe_telegram_rs::mm_parser", "Updating JWT token");
-    let token = get_jwt_token().await;
-
-    let conn = Connection::open("storage.sqlite")?;
-
-    let mut del = conn.prepare_cached("delete from jwt")?;
-
-    let mut upd = conn.prepare_cached(
-        "replace into jwt (token)
-            values (?1)",
-    )?;
-
-    del.execute([])?;
-    upd.execute(params![token])?;
-    Ok(())
-}
-
-async fn get_jwt_db() -> rusqlite::Result<String> {
-    let conn = Connection::open("storage.sqlite")?;
-    let mut stmt = conn.prepare_cached("select token from jwt")?;
-    let mut rows = stmt.query([])?;
-    let row = rows.next()?.unwrap();
-    let token: String = row.get(0)?;
-
-    Ok(token)
-}
-
-async fn mm_json_request(day: DateTime<Local>, mensa_id: u8) -> Option<String> {
+async fn mm_json_request(day: DateTime<Local>, mensa_id: u8, jwt_reader: Arc<RwLock<String>>) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
     let req_now = Instant::now();
-    let mm_json = get_mensimates_json(&mensa, &date).await;
+    let mm_json = get_mensimates_json(&mensa, &date, jwt_reader).await;
     log::debug!("got MM json after {:.2?}", req_now.elapsed());
 
     mm_json
@@ -87,10 +60,10 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
     (date, mensa)
 }
 
-async fn get_mensimates_json(mensa: &str, date: &str) -> Option<String> {
+async fn get_mensimates_json(mensa: &str, date: &str, jwt_reader: Arc<RwLock<String>>) -> Option<String> {
     let client = reqwest::Client::new();
 
-    let token = get_jwt_db().await.unwrap();
+    let token = jwt_reader.read().await.clone();
 
     let response = client
         .get(format!(
@@ -107,7 +80,7 @@ async fn get_mensimates_json(mensa: &str, date: &str) -> Option<String> {
     }
 }
 
-pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
+pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_reader: Arc<RwLock<String>>) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
@@ -134,7 +107,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals(requested_date, mensa_location).await;
+    let day_meals = get_meals(requested_date, mensa_location, jwt_reader).await;
     let german_date = german_date_fmt(requested_date.date_naive());
 
     // warn if requested "today" was raised to next monday (requested on sat/sun)
@@ -214,8 +187,8 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Option<Vec<MealGroup>> {
-    let mm_json = mm_json_request(requested_date, mensa_location).await;
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8, jwt_reader: Arc<RwLock<String>>) -> Option<Vec<MealGroup>> {
+    let mm_json = mm_json_request(requested_date, mensa_location, jwt_reader).await;
 
     match mm_json {
         Some(text) => {

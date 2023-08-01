@@ -10,8 +10,8 @@ use tokio::fs::File;
 use tokio::io::{AsyncReadExt, AsyncWriteExt}; // for file operations
 
 use tokio::time::Instant;
-
-pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
+pub async fn build_meal_message(
+    days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
