@@ -597,6 +597,17 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     .execute([])
     .unwrap();
 
+    // you guessed it
+    conn.prepare(
+        "create table if not exists meals (
+            mensa_and_date text,
+            json_text
+        )",
+    )
+    .unwrap()
+    .execute([])
+    .unwrap();
+
     let mut stmt = conn
         .prepare_cached(
             "SELECT chat_id, mensa_id, hour, minute, last_callback_id FROM registrations",
