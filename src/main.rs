@@ -12,7 +12,7 @@ cfg_if! {
 
 use chrono::Timelike;
 use log::log_enabled;
-use regex::Regex;
+use regex_lite::Regex;
 use rusqlite::{params, Connection, Result};
 use static_init::dynamic;
 use std::{collections::HashMap, env, error::Error, time::Instant};
@@ -1037,7 +1037,9 @@ fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     if let Some(first_arg) = txt.split(' ').nth(1) {
         #[dynamic]
         static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-
+        let now = Instant::now();
+        println!("m: {}", RE.is_match(first_arg));
+        println!("Regex compile took {:.2?}", now.elapsed());
         if !RE.is_match(first_arg) {
             Err(TimeParseError::InvalidTimePassed)
         } else {
