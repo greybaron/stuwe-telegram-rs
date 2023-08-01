@@ -28,7 +28,7 @@ pub async fn refresh_jwt_db() -> rusqlite::Result<()> {
     log::debug!(target: "stuwe_telegram_rs::mm_parser", "Updating JWT token");
     let token = get_jwt_token().await;
 
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("storage.sqlite")?;
 
     let mut del = conn.prepare_cached("delete from jwt")?;
 
@@ -43,7 +43,7 @@ pub async fn refresh_jwt_db() -> rusqlite::Result<()> {
 }
 
 async fn get_jwt_db() -> rusqlite::Result<String> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("storage.sqlite")?;
     let mut stmt = conn.prepare_cached("select token from jwt")?;
     let mut rows = stmt.query([])?;
     let row = rows.next()?.unwrap();

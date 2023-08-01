@@ -1,5 +1,5 @@
 /target
-jobs.db
+storage.sqlite
 /cached_data
 .cargo/
 build.sh

@@ -482,7 +482,7 @@ fn make_days_keyboard() -> InlineKeyboardMarkup {
 }
 
 fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("storage.sqlite")?;
     let mut stmt = conn
         .prepare_cached(
             "replace into registrations (chat_id, mensa_id, hour, minute)
@@ -501,7 +501,7 @@ fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
 
 // fn update_db_row(chat_id: i64, mensa_id: Option<u8>, hour: Option<u32>, minute: Option<u32>) -> rusqlite::Result<()> {
 fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("storage.sqlite")?;
 
     // could be better but eh
     let mut update_mensa_stmt = conn
@@ -556,7 +556,7 @@ fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
 }
 
 fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
-    let conn = Connection::open("jobs.db")?;
+    let conn = Connection::open("storage.sqlite")?;
     let mut stmt = conn
         .prepare_cached(
             "UPDATE registrations
@@ -572,7 +572,7 @@ fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
 
 fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
-    let conn = Connection::open("jobs.db").unwrap();
+    let conn = Connection::open("storage.sqlite").unwrap();
 
     // ensure db table exists
     conn.prepare(
@@ -1039,6 +1039,10 @@ fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
         lazy_static! {
             static ref RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
         }
+
+        let now = Instant::now();
+        println!("m: {}", RE.is_match(first_arg));
+        println!("t: {:.2?}", now.elapsed());
 
         if !RE.is_match(first_arg) {
             Err(TimeParseError::InvalidTimePassed)
