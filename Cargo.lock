@@ -582,12 +582,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hashmap"
-version = "0.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58f4c5bfe5d332cdefc57bd31471448f8b6cb0398542f4aecc2620e577e6fd54"
-
-[[package]]
 name = "heck"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1702,7 +1696,6 @@ version = "1.1.1"
 dependencies = [
  "cfg-if",
  "chrono",
- "hashmap",
  "log",
  "pretty_env_logger",
  "rand",
