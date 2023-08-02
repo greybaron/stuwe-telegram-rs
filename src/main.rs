@@ -15,7 +15,12 @@ use log::log_enabled;
 use regex_lite::Regex;
 use rusqlite::{params, Connection, Result};
 use static_init::dynamic;
-use std::{collections::HashMap, env, error::Error, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    env,
+    error::Error,
+    time::Instant,
+};
 use teloxide::{
     prelude::*,
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Me, MessageId, ParseMode},
@@ -47,7 +52,7 @@ async fn main() {
     // pretty_env_logger::
     log::info!("Starting command bot...");
 
-    let mensen: HashMap<&str, u8> = HashMap::from([
+    let mensen: BTreeMap<&str, u8> = BTreeMap::from([
         ("Cafeteria Dittrichring", 153),
         ("Mensaria am Botanischen Garten", 127),
         ("Mensa Academica", 118),
@@ -116,7 +121,7 @@ async fn main() {
 async fn callback_handler(
     bot: Bot,
     q: CallbackQuery,
-    mensen: HashMap<&str, u8>,
+    mensen: BTreeMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -140,6 +145,14 @@ async fn callback_handler(
                     .await
                     .unwrap();
 
+                    let text = build_meal_message(0, *mensen.get(arg).unwrap()).await;
+
+                    let keyboard = make_days_keyboard();
+                    bot.send_message(chat.id, text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(keyboard)
+                        .await?;
+
                     let task = JobHandlerTask {
                         job_type: JobType::UpdateRegistration,
                         chat_id: Some(chat.id.0),
@@ -162,6 +175,14 @@ async fn callback_handler(
 
                     bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa, bzw\\.\n/uhrzeit \\[Zeit\\]", markdown::bold(arg)))
                     .parse_mode(ParseMode::MarkdownV2).await?;
+
+                    let text = build_meal_message(0, *mensen.get(arg).unwrap()).await;
+
+                    let keyboard = make_days_keyboard();
+                    bot.send_message(chat.id, text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(keyboard)
+                        .await?;
 
                     let task = JobHandlerTask {
                         job_type: JobType::Register,
@@ -246,7 +267,7 @@ async fn command_handler(
     bot: Bot,
     msg: Message,
     me: Me,
-    mensen: HashMap<&str, u8>,
+    mensen: BTreeMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -451,7 +472,7 @@ async fn command_handler(
     Ok(())
 }
 
-fn make_mensa_keyboard(mensen: HashMap<&str, u8>, only_mensa_upd: bool) -> InlineKeyboardMarkup {
+fn make_mensa_keyboard(mensen: BTreeMap<&str, u8>, only_mensa_upd: bool) -> InlineKeyboardMarkup {
     let mut keyboard = Vec::new();
 
     // shitty
@@ -709,7 +730,7 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
-    #[cfg(not(feature = "mensimates"))] mensen: HashMap<&str, u8>,
+    #[cfg(not(feature = "mensimates"))] mensen: BTreeMap<&str, u8>,
 ) {
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db();
@@ -1037,9 +1058,7 @@ fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     if let Some(first_arg) = txt.split(' ').nth(1) {
         #[dynamic]
         static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-        let now = Instant::now();
-        println!("m: {}", RE.is_match(first_arg));
-        println!("Regex compile took {:.2?}", now.elapsed());
+
         if !RE.is_match(first_arg) {
             Err(TimeParseError::InvalidTimePassed)
         } else {
