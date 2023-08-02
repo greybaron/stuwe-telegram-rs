@@ -25,7 +25,11 @@ pub async fn get_jwt_token() -> String {
     login_resp.unwrap().text().await.unwrap()
 }
 
-async fn mm_json_request(day: DateTime<Local>, mensa_id: u8, jwt_lock: Arc<RwLock<String>>) -> Option<String> {
+async fn mm_json_request(
+    day: DateTime<Local>,
+    mensa_id: u8,
+    jwt_lock: Arc<RwLock<String>>,
+) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
     let req_now = Instant::now();
@@ -60,7 +64,11 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
     (date, mensa)
 }
 
-async fn get_mensimates_json(mensa: &str, date: &str, jwt_lock: Arc<RwLock<String>>) -> Option<String> {
+async fn get_mensimates_json(
+    mensa: &str,
+    date: &str,
+    jwt_lock: Arc<RwLock<String>>,
+) -> Option<String> {
     let client = reqwest::Client::new();
 
     let token = jwt_lock.read().await.clone();
@@ -80,7 +88,11 @@ async fn get_mensimates_json(mensa: &str, date: &str, jwt_lock: Arc<RwLock<Strin
     }
 }
 
-pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_lock: Arc<RwLock<String>>) -> String {
+pub async fn build_meal_message(
+    days_forward: i64,
+    mensa_location: u8,
+    jwt_lock: Arc<RwLock<String>>,
+) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
@@ -187,7 +199,11 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_lock:
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8, jwt_lock: Arc<RwLock<String>>) -> Option<Vec<MealGroup>> {
+async fn get_meals(
+    requested_date: DateTime<Local>,
+    mensa_location: u8,
+    jwt_lock: Arc<RwLock<String>>,
+) -> Option<Vec<MealGroup>> {
     let mm_json = mm_json_request(requested_date, mensa_location, jwt_lock).await;
 
     match mm_json {

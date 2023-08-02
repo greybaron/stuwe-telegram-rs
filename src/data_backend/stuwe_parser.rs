@@ -3,14 +3,13 @@ use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
-use rusqlite::{Connection, params};
+use rusqlite::{params, Connection};
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
-pub async fn build_meal_message(
-    days_forward: i64, mensa_location: u8) -> String {
+pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
@@ -102,15 +101,6 @@ async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> Meals
 
     let url_params = build_url_params(requested_date, mensa_location);
 
-    // // try to read from cache
-    // if let Some(day_meals) = json_cache_to_meal(&url_params).await {
-    //     day_meals
-    // } else {
-    //     save_to_cache(requested_date, mensa_location)
-    //         .await
-    //         .1
-    //         .unwrap()
-    // }
     let json_text = get_meal_from_db(&url_params).await;
     json_to_meal(&json_text.unwrap()).await.unwrap()
 }
@@ -230,19 +220,6 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
     }
 }
 
-// async fn save_update_cache(url_params: &str, json_text: &str) {
-//     // check cache dir existence, and create if not found
-//     std::fs::create_dir_all("cached_data/").expect("failed to create data cache dir");
-
-//     let mut json_file = File::create(format!("cached_data/{}.json", &url_params))
-//         .await
-//         .expect("failed to create json cache file");
-//     json_file
-//         .write_all(json_text.as_bytes())
-//         .await
-//         .expect("failed to write to a json file");
-// }
-
 async fn save_meal_to_db(url_params: &str, json_text: &str) {
     let conn = Connection::open("storage.sqlite").unwrap();
     let mut stmt = conn
@@ -252,25 +229,17 @@ async fn save_meal_to_db(url_params: &str, json_text: &str) {
         )
         .unwrap();
 
-    stmt.execute(params![
-        url_params,
-        json_text,
-    ]).unwrap();
+    stmt.execute(params![url_params, json_text,]).unwrap();
 }
 
 async fn get_meal_from_db(url_params: &str) -> Option<String> {
     let conn = Connection::open("storage.sqlite").unwrap();
-    let mut stmt = conn.prepare_cached("select json_text from meals where mensa_and_date = (?1)").unwrap();
+    let mut stmt = conn
+        .prepare_cached("select json_text from meals where mensa_and_date = (?1)")
+        .unwrap();
     let mut rows = stmt.query([url_params]).unwrap();
 
     rows.next().unwrap().map(|row| row.get(0).unwrap())
-    // match rows.next().unwrap() {
-    //     Some(row) => Some(row.get(0).unwrap()),
-    //     None => None
-    // }
-    // let json_text: String = row.get(0)?;
-
-    // Ok(json_text)
 }
 
 fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> String {
@@ -354,28 +323,6 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
     mensen_today_changed
 }
 
-// async fn meals_to_json() -> String {
-
-// }
-
-// async fn json_cache_to_meal(url_params: &str) -> Option<MealsForDay> {
-//     match File::open(format!("cached_data/{}.json", &url_params)).await {
-//         // cached file exists, use that
-//         Ok(mut file) => {
-//             let now = Instant::now();
-//             let mut json_text = String::new();
-//             file.read_to_string(&mut json_text).await.unwrap();
-
-//             let day_meals: MealsForDay = serde_json::from_str(&json_text).unwrap();
-//             log::debug!("json cache deser: {:.2?}", now.elapsed());
-
-//             Some(day_meals)
-//         }
-//         // no cached file, use reqwest
-//         Err(_) => None,
-//     }
-// }
-
 async fn json_to_meal(json_text: &str) -> Option<MealsForDay> {
     if !json_text.is_empty() {
         Some(serde_json::from_str(json_text).unwrap())
@@ -398,7 +345,11 @@ async fn save_to_cache(day: DateTime<Local>, mensa_id: u8) -> (Option<u8>, Optio
     // if downloaded meals are different from cached meals, update cache
     if downloaded_json_text != db_json_text {
         save_meal_to_db(&url_params, &downloaded_json_text).await;
-        let today_updated = if day.weekday() == chrono::Local::now().weekday()  {Some(mensa_id)} else {None};
+        let today_updated = if day.weekday() == chrono::Local::now().weekday() {
+            Some(mensa_id)
+        } else {
+            None
+        };
         (today_updated, Some(downloaded_meals))
     } else {
         (None, Some(downloaded_meals))

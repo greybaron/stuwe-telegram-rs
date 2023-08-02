@@ -19,8 +19,8 @@ use std::{
     collections::{BTreeMap, HashMap},
     env,
     error::Error,
+    sync::Arc,
     time::Instant,
-    sync::Arc
 };
 use teloxide::{
     prelude::*,
@@ -117,7 +117,8 @@ async fn main() {
     }
 
     // passing a receiver doesnt work for some reason, so sending query_registration_tx and resubscribing to get rx
-    let command_handler_deps = dptree::deps![mensen, registration_tx, query_registration_tx, jwt_lock];
+    let command_handler_deps =
+        dptree::deps![mensen, registration_tx, query_registration_tx, jwt_lock];
     Dispatcher::builder(bot, handler)
         .dependencies(command_handler_deps)
         .enable_ctrlc_handler()
@@ -132,8 +133,7 @@ async fn callback_handler(
     mensen: BTreeMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    #[cfg(feature = "mensimates")]
-    jwt_lock: Arc<RwLock<String>>,
+    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut query_registration_rx = query_registration_tx.subscribe();
 
@@ -159,8 +159,9 @@ async fn callback_handler(
                         0,
                         *mensen.get(arg).unwrap(),
                         #[cfg(feature = "mensimates")]
-                        jwt_lock
-                    ).await;
+                        jwt_lock,
+                    )
+                    .await;
 
                     let keyboard = make_days_keyboard();
                     bot.send_message(chat.id, text)
@@ -192,10 +193,12 @@ async fn callback_handler(
                     .parse_mode(ParseMode::MarkdownV2).await?;
 
                     let text = build_meal_message(
-                        0, *mensen.get(arg).unwrap(),
+                        0,
+                        *mensen.get(arg).unwrap(),
                         #[cfg(feature = "mensimates")]
-                        jwt_lock
-                    ).await;
+                        jwt_lock,
+                    )
+                    .await;
 
                     let keyboard = make_days_keyboard();
                     bot.send_message(chat.id, text)
@@ -236,10 +239,11 @@ async fn callback_handler(
 
                         let text = build_meal_message(
                             days_forward,
-                            prev_registration.1, 
+                            prev_registration.1,
                             #[cfg(feature = "mensimates")]
-                            jwt_lock
-                        ).await;
+                            jwt_lock,
+                        )
+                        .await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
@@ -292,9 +296,7 @@ async fn command_handler(
     mensen: BTreeMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    #[cfg(feature = "mensimates")]
-    jwt_lock: Arc<RwLock<String>>,
-
+    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut query_registration_rx = query_registration_tx.subscribe();
     const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
@@ -328,8 +330,9 @@ async fn command_handler(
                         days_forward,
                         registration.1,
                         #[cfg(feature = "mensimates")]
-                        jwt_lock
-                    ).await;
+                        jwt_lock,
+                    )
+                    .await;
                     log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
                     let now = Instant::now();
 
@@ -691,8 +694,7 @@ async fn load_job(
     task: JobHandlerTask,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_rx: broadcast::Receiver<Option<RegistrationEntry>>,
-    #[cfg(feature = "mensimates")]
-    jwt_lock: Arc<RwLock<String>>,
+    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
 ) -> Option<Uuid> {
     // return if no time is set
     task.hour?;
@@ -730,8 +732,9 @@ async fn load_job(
                             0,
                             task.mensa_id.unwrap(),
                             #[cfg(feature = "mensimates")]
-                            jwt_lock
-                        ).await,
+                            jwt_lock,
+                        )
+                        .await,
                     )
                     .parse_mode(ParseMode::MarkdownV2)
                     .reply_markup(keyboard)
@@ -780,8 +783,7 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
-    #[cfg(feature = "mensimates")]
-    jwt_lock: Arc<RwLock<String>>,
+    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
     #[cfg(not(feature = "mensimates"))] mensen: BTreeMap<&str, u8>,
 ) {
     let registr_tx_loadjob = registration_tx.clone();
@@ -859,7 +861,7 @@ async fn init_task_scheduler(
             registration_tx,
             query_registration_tx.subscribe(),
             #[cfg(feature = "mensimates")]
-            jwt_lock.clone()
+            jwt_lock.clone(),
         )
         .await;
         loaded_user_data.insert(
@@ -907,7 +909,7 @@ async fn init_task_scheduler(
                     registr_tx_loadjob.clone(),
                     query_registration_tx.subscribe(),
                     #[cfg(feature = "mensimates")]
-                    jwt_lock.clone()
+                    jwt_lock.clone(),
                 )
                 .await;
 
