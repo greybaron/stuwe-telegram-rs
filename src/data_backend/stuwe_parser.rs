@@ -7,8 +7,6 @@ use rusqlite::{Connection, params};
 use scraper::{Html, Selector};
 use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
-use tokio::fs::File;
-use tokio::io::AsyncReadExt; // for file operations
 
 use tokio::time::Instant;
 pub async fn build_meal_message(
@@ -264,11 +262,12 @@ async fn get_meal_from_db(url_params: &str) -> Option<String> {
     let conn = Connection::open("storage.sqlite").unwrap();
     let mut stmt = conn.prepare_cached("select json_text from meals where mensa_and_date = (?1)").unwrap();
     let mut rows = stmt.query([url_params]).unwrap();
-    // let test = rows.next()?;
-    match rows.next().unwrap() {
-        Some(row) => Some(row.get(0).unwrap()),
-        None => None
-    }
+
+    rows.next().unwrap().map(|row| row.get(0).unwrap())
+    // match rows.next().unwrap() {
+    //     Some(row) => Some(row.get(0).unwrap()),
+    //     None => None
+    // }
     // let json_text: String = row.get(0)?;
 
     // Ok(json_text)
@@ -379,7 +378,7 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
 
 async fn json_to_meal(json_text: &str) -> Option<MealsForDay> {
     if !json_text.is_empty() {
-        Some(serde_json::from_str(&json_text).unwrap())
+        Some(serde_json::from_str(json_text).unwrap())
     } else {
         None
     }
@@ -400,43 +399,8 @@ async fn save_to_cache(day: DateTime<Local>, mensa_id: u8) -> (Option<u8>, Optio
     if downloaded_json_text != db_json_text {
         save_meal_to_db(&url_params, &downloaded_json_text).await;
         let today_updated = if day.weekday() == chrono::Local::now().weekday()  {Some(mensa_id)} else {None};
-        return (today_updated, Some(downloaded_meals))
+        (today_updated, Some(downloaded_meals))
     } else {
-        return (None, Some(downloaded_meals))
+        (None, Some(downloaded_meals))
     }
-
-    // // // // read (and update) cached json
-    // // // match File::open(format!("cached_data/{}.json", &url_params)).await {
-    // // //     Ok(mut json) => {
-    // // //         let mut cache_json_text = String::new();
-    // // //         json.read_to_string(&mut cache_json_text).await.unwrap();
-
-    // // //         // cache was updated, return mensa_id if 'today' was updated
-    // // //         // return new data if requested
-    // // //         if downloaded_json_text != cache_json_text {
-    // // //             save_update_cache(&url_params, &downloaded_json_text).await;
-    // // //             (
-    // // //                 if day.weekday() == chrono::Local::now().weekday() {
-    // // //                     Some(mensa_id)
-    // // //                 } else {
-    // // //                     None
-    // // //                 },
-    // // //                 Some(downloaded_meals),
-    // // //             )
-    // // //         } else {
-    // // //             (None, Some(downloaded_meals))
-    // // //         }
-    // // //     }
-    // // //     Err(_) => {
-    // // //         save_update_cache(&url_params, &downloaded_json_text).await;
-    // // //         (
-    // // //             if day.weekday() == chrono::Local::now().weekday() {
-    // // //                 Some(mensa_id)
-    // // //             } else {
-    // // //                 None
-    // // //             },
-    // // //             Some(downloaded_meals),
-    // // //         )
-    // // //     }
-    // // // }
 }
