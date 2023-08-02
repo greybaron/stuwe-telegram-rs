@@ -30,11 +30,10 @@ extern crate cfg_if;
 
 #[tokio::main]
 async fn main() {
-    let jwt_token: Arc<RwLock<String>> = Arc::new(RwLock::new(String::from("test")));
-    let jwt_reader = jwt_token.clone();
-    let jwt_writer = jwt_token.clone();
+    let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::from("test")));
+    // let jwt_reader = jwt_token.clone();
+    // let jwt_writer = jwt_token.clone();
 
-    println!("jt: {}", jwt_token.read().await);
     pretty_env_logger::formatted_timed_builder()
         .filter_level(log::LevelFilter::Info)
         .filter_module(
@@ -93,24 +92,26 @@ async fn main() {
     // chat_id -> opt(job_uuid), mensa_id
     // every user has a mensa_id, but only users with auto send have a job_uuid
     let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
-
-    tokio::spawn(async move {
-        log::info!("Starting task scheduler...");
-        init_task_scheduler(
-            bot_tasksched,
-            registration_tx_ts,
-            job_rx,
-            query_registration_tx_ts,
-            loaded_user_data,
-            jwt_writer,
-            #[cfg(not(feature = "mensimates"))]
-            mensen_ts,
-        )
-        .await;
-    });
+        {
+        let jwt_lock = jwt_lock.clone();
+        tokio::spawn(async move {
+            log::info!("Starting task scheduler...");
+            init_task_scheduler(
+                bot_tasksched,
+                registration_tx_ts,
+                job_rx,
+                query_registration_tx_ts,
+                loaded_user_data,
+                jwt_lock,
+                #[cfg(not(feature = "mensimates"))]
+                mensen_ts,
+            )
+            .await;
+        });
+}
 
     // passing a receiver doesnt work for some reason, so sending query_registration_tx and resubscribing to get rx
-    let command_handler_deps = dptree::deps![mensen, registration_tx, query_registration_tx, jwt_reader];
+    let command_handler_deps = dptree::deps![mensen, registration_tx, query_registration_tx, jwt_lock];
     Dispatcher::builder(bot, handler)
         .dependencies(command_handler_deps)
         .enable_ctrlc_handler()
@@ -125,7 +126,7 @@ async fn callback_handler(
     mensen: HashMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_reader: Arc<RwLock<String>>,
+    jwt_lock: Arc<RwLock<String>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut query_registration_rx = query_registration_tx.subscribe();
 
@@ -181,12 +182,9 @@ async fn callback_handler(
                     registration_tx.send(task).unwrap();
                 }
                 "day" => {
-                    let jwt_token = jwt_reader.read().await.clone();
+                    let jwt_token = jwt_lock.read().await.clone();
                     println!("using jwt: {}", jwt_token);
-                    // let fuck = jwt_token.as_str();
-                    // println!("{}",  );
-                    // sometimes fails if you really spam those buttons, because two callbacks cant edit the
-                    // message simultaneously. But who cares, since both callbacks will just remove the same buttons
+
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
                     let prev_reg_opt = query_registration_rx.recv().await.unwrap();
                     if let Some(prev_registration) = prev_reg_opt {
@@ -207,7 +205,7 @@ async fn callback_handler(
                         let day_str = ["Heute", "Morgen", "Übermorgen"]
                             [usize::try_from(days_forward).unwrap()];
 
-                        let text = build_meal_message(days_forward, prev_registration.1, jwt_reader).await;
+                        let text = build_meal_message(days_forward, prev_registration.1, jwt_lock).await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
@@ -771,26 +769,23 @@ async fn init_task_scheduler(
         } else {
             // if mensimates, create job to reload token every minute
             // reload now
-            let lock_write = jwt_lock.clone();
-            let lifeispointless = jwt_lock.clone();
             {
-                // let test = jwt_writer;
-                
-                let mut kek = jwt_lock.write_owned().await;
-                *kek = get_jwt_token().await;
-                drop(kek)
+                let jwt_lock = jwt_lock.clone();
+                let mut wr = jwt_lock.write_owned().await;
+                *wr = get_jwt_token().await;
             }
-            let jwt_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
-                let bruh = lock_write.clone();
-                Box::pin(async move {
-                    let mut kek = bruh.write_owned().await;
-                    *kek = get_jwt_token().await;
-                    // refresh_jwt_db().await.unwrap();
-
+            {
+                let jwt_lock = jwt_lock.clone();
+                let jwt_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
+                    let jwt_lock = jwt_lock.clone();
+                    Box::pin(async move {
+                        let mut wr = jwt_lock.write_owned().await;
+                        *wr = get_jwt_token().await;
+                    })
                 })
-            })
-            .unwrap();
-            sched.add(jwt_job).await.unwrap();
+                .unwrap();
+                sched.add(jwt_job).await.unwrap();
+            }
         }
     }
 
@@ -804,7 +799,7 @@ async fn init_task_scheduler(
             task.clone(),
             registration_tx,
             query_registration_tx.subscribe(),
-            lifeispointless.clone()
+            jwt_lock.clone()
         )
         .await;
         loaded_user_data.insert(
@@ -851,7 +846,7 @@ async fn init_task_scheduler(
                     job_handler_task.clone(),
                     registr_tx_loadjob.clone(),
                     query_registration_tx.subscribe(),
-                    lifeispointless.clone()
+                    jwt_lock.clone()
                 )
                 .await;
 
@@ -901,7 +896,7 @@ async fn init_task_scheduler(
                                 sched.context.job_delete_tx.send(uuid).unwrap();
                             }
                             // load new job, return uuid
-                            load_job(bot.clone(), &sched, new_job_task.clone(), registr_tx_loadjob.clone(), query_registration_tx.subscribe(), lifeispointless.clone()).await
+                            load_job(bot.clone(), &sched, new_job_task.clone(), registr_tx_loadjob.clone(), query_registration_tx.subscribe(), jwt_lock.clone()).await
                         } else {
                             // no new time was set -> return old job uuid
                             previous_registration.0
