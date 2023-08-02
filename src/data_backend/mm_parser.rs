@@ -25,11 +25,11 @@ pub async fn get_jwt_token() -> String {
     login_resp.unwrap().text().await.unwrap()
 }
 
-async fn mm_json_request(day: DateTime<Local>, mensa_id: u8, jwt_reader: Arc<RwLock<String>>) -> Option<String> {
+async fn mm_json_request(day: DateTime<Local>, mensa_id: u8, jwt_lock: Arc<RwLock<String>>) -> Option<String> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
     let req_now = Instant::now();
-    let mm_json = get_mensimates_json(&mensa, &date, jwt_reader).await;
+    let mm_json = get_mensimates_json(&mensa, &date, jwt_lock).await;
     log::debug!("got MM json after {:.2?}", req_now.elapsed());
 
     mm_json
@@ -60,10 +60,10 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
     (date, mensa)
 }
 
-async fn get_mensimates_json(mensa: &str, date: &str, jwt_reader: Arc<RwLock<String>>) -> Option<String> {
+async fn get_mensimates_json(mensa: &str, date: &str, jwt_lock: Arc<RwLock<String>>) -> Option<String> {
     let client = reqwest::Client::new();
 
-    let token = jwt_reader.read().await.clone();
+    let token = jwt_lock.read().await.clone();
 
     let response = client
         .get(format!(
@@ -80,7 +80,7 @@ async fn get_mensimates_json(mensa: &str, date: &str, jwt_reader: Arc<RwLock<Str
     }
 }
 
-pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_reader: Arc<RwLock<String>>) -> String {
+pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_lock: Arc<RwLock<String>>) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
@@ -107,7 +107,7 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_reade
     log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals(requested_date, mensa_location, jwt_reader).await;
+    let day_meals = get_meals(requested_date, mensa_location, jwt_lock).await;
     let german_date = german_date_fmt(requested_date.date_naive());
 
     // warn if requested "today" was raised to next monday (requested on sat/sun)
@@ -187,8 +187,8 @@ pub async fn build_meal_message(days_forward: i64, mensa_location: u8, jwt_reade
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8, jwt_reader: Arc<RwLock<String>>) -> Option<Vec<MealGroup>> {
-    let mm_json = mm_json_request(requested_date, mensa_location, jwt_reader).await;
+async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8, jwt_lock: Arc<RwLock<String>>) -> Option<Vec<MealGroup>> {
+    let mm_json = mm_json_request(requested_date, mensa_location, jwt_lock).await;
 
     match mm_json {
         Some(text) => {

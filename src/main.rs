@@ -90,7 +90,8 @@ async fn main() {
     // chat_id -> opt(job_uuid), mensa_id
     // every user has a mensa_id, but only users with auto send have a job_uuid
     let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
-        {
+    {
+        #[cfg(feature = "mensimates")]
         let jwt_lock = jwt_lock.clone();
         tokio::spawn(async move {
             log::info!("Starting task scheduler...");
@@ -100,13 +101,14 @@ async fn main() {
                 job_rx,
                 query_registration_tx_ts,
                 loaded_user_data,
+                #[cfg(feature = "mensimates")]
                 jwt_lock,
                 #[cfg(not(feature = "mensimates"))]
                 mensen_ts,
             )
             .await;
         });
-}
+    }
 
     // passing a receiver doesnt work for some reason, so sending query_registration_tx and resubscribing to get rx
     let command_handler_deps = dptree::deps![mensen, registration_tx, query_registration_tx, jwt_lock];
@@ -124,6 +126,7 @@ async fn callback_handler(
     mensen: HashMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    #[cfg(feature = "mensimates")]
     jwt_lock: Arc<RwLock<String>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut query_registration_rx = query_registration_tx.subscribe();
@@ -200,7 +203,12 @@ async fn callback_handler(
                         let day_str = ["Heute", "Morgen", "Übermorgen"]
                             [usize::try_from(days_forward).unwrap()];
 
-                        let text = build_meal_message(days_forward, prev_registration.1, jwt_lock).await;
+                        let text = build_meal_message(
+                            days_forward,
+                            prev_registration.1, 
+                            #[cfg(feature = "mensimates")]
+                            jwt_lock
+                        ).await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
@@ -253,7 +261,8 @@ async fn command_handler(
     mensen: HashMap<&str, u8>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_reader: Arc<RwLock<String>>,
+    #[cfg(feature = "mensimates")]
+    jwt_lock: Arc<RwLock<String>>,
 
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let mut query_registration_rx = query_registration_tx.subscribe();
@@ -284,7 +293,12 @@ async fn command_handler(
                             .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
                             .await;
                     }
-                    let text = build_meal_message(days_forward, registration.1, jwt_reader).await;
+                    let text = build_meal_message(
+                        days_forward,
+                        registration.1,
+                        #[cfg(feature = "mensimates")]
+                        jwt_lock
+                    ).await;
                     log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
                     let now = Instant::now();
 
@@ -635,7 +649,8 @@ async fn load_job(
     task: JobHandlerTask,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_rx: broadcast::Receiver<Option<RegistrationEntry>>,
-    jwt_reader: Arc<RwLock<String>>,
+    #[cfg(feature = "mensimates")]
+    jwt_lock: Arc<RwLock<String>>,
 ) -> Option<Uuid> {
     // return if no time is set
     task.hour?;
@@ -658,7 +673,8 @@ async fn load_job(
         )
         .as_str(),
         move |_uuid, mut _l| {
-            let jwt_reader = jwt_reader.clone();
+            #[cfg(feature = "mensimates")]
+            let jwt_lock = jwt_lock.clone();
             let bot = bot.clone();
             let registration_tx = registration_tx.clone();
             let mut query_registration_rx = query_registration_rx.resubscribe();
@@ -668,7 +684,12 @@ async fn load_job(
                 let msg = bot
                     .send_message(
                         ChatId(task.chat_id.unwrap()),
-                        build_meal_message(0, task.mensa_id.unwrap(), jwt_reader).await,
+                        build_meal_message(
+                            0,
+                            task.mensa_id.unwrap(),
+                            #[cfg(feature = "mensimates")]
+                            jwt_lock
+                        ).await,
                     )
                     .parse_mode(ParseMode::MarkdownV2)
                     .reply_markup(keyboard)
@@ -717,6 +738,7 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
+    #[cfg(feature = "mensimates")]
     jwt_lock: Arc<RwLock<String>>,
     #[cfg(not(feature = "mensimates"))] mensen: HashMap<&str, u8>,
 ) {
@@ -794,6 +816,7 @@ async fn init_task_scheduler(
             task.clone(),
             registration_tx,
             query_registration_tx.subscribe(),
+            #[cfg(feature = "mensimates")]
             jwt_lock.clone()
         )
         .await;
@@ -841,6 +864,7 @@ async fn init_task_scheduler(
                     job_handler_task.clone(),
                     registr_tx_loadjob.clone(),
                     query_registration_tx.subscribe(),
+                    #[cfg(feature = "mensimates")]
                     jwt_lock.clone()
                 )
                 .await;
@@ -891,7 +915,15 @@ async fn init_task_scheduler(
                                 sched.context.job_delete_tx.send(uuid).unwrap();
                             }
                             // load new job, return uuid
-                            load_job(bot.clone(), &sched, new_job_task.clone(), registr_tx_loadjob.clone(), query_registration_tx.subscribe(), jwt_lock.clone()).await
+                            load_job(
+                                bot.clone(),
+                                &sched,
+                                new_job_task.clone(),
+                                registr_tx_loadjob.clone(),
+                                query_registration_tx.subscribe(),
+                                #[cfg(feature = "mensimates")]
+                                jwt_lock.clone()
+                            ).await
                         } else {
                             // no new time was set -> return old job uuid
                             previous_registration.0
