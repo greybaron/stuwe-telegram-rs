@@ -31,8 +31,6 @@ extern crate cfg_if;
 #[tokio::main]
 async fn main() {
     let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::from("test")));
-    // let jwt_reader = jwt_token.clone();
-    // let jwt_writer = jwt_token.clone();
 
     pretty_env_logger::formatted_timed_builder()
         .filter_level(log::LevelFilter::Info)
@@ -182,9 +180,6 @@ async fn callback_handler(
                     registration_tx.send(task).unwrap();
                 }
                 "day" => {
-                    let jwt_token = jwt_lock.read().await.clone();
-                    println!("using jwt: {}", jwt_token);
-
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
                     let prev_reg_opt = query_registration_rx.recv().await.unwrap();
                     if let Some(prev_registration) = prev_reg_opt {
@@ -598,15 +593,15 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     .execute([])
     .unwrap();
 
-    // ensure db table exists
-    conn.prepare(
-        "create table if not exists jwt (
-            token text
-        )",
-    )
-    .unwrap()
-    .execute([])
-    .unwrap();
+    // // ensure db table exists
+    // conn.prepare(
+    //     "create table if not exists jwt (
+    //         token text
+    //     )",
+    // )
+    // .unwrap()
+    // .execute([])
+    // .unwrap();
 
     let mut stmt = conn
         .prepare_cached(
@@ -1060,9 +1055,6 @@ fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     if let Some(first_arg) = txt.split(' ').nth(1) {
         #[dynamic]
         static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-        let now = Instant::now();
-        println!("m: {}", RE.is_match(first_arg));
-        println!("Regex compile took {:.2?}", now.elapsed());
         if !RE.is_match(first_arg) {
             Err(TimeParseError::InvalidTimePassed)
         } else {
