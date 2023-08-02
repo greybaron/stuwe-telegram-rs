@@ -155,7 +155,12 @@ async fn callback_handler(
                     .await
                     .unwrap();
 
-                    let text = build_meal_message(0, *mensen.get(arg).unwrap()).await;
+                    let text = build_meal_message(
+                        0,
+                        *mensen.get(arg).unwrap(),
+                        #[cfg(feature = "mensimates")]
+                        jwt_lock
+                    ).await;
 
                     let keyboard = make_days_keyboard();
                     bot.send_message(chat.id, text)
@@ -186,7 +191,11 @@ async fn callback_handler(
                     bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa, bzw\\.\n/uhrzeit \\[Zeit\\]", markdown::bold(arg)))
                     .parse_mode(ParseMode::MarkdownV2).await?;
 
-                    let text = build_meal_message(0, *mensen.get(arg).unwrap()).await;
+                    let text = build_meal_message(
+                        0, *mensen.get(arg).unwrap(),
+                        #[cfg(feature = "mensimates")]
+                        jwt_lock
+                    ).await;
 
                     let keyboard = make_days_keyboard();
                     bot.send_message(chat.id, text)
