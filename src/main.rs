@@ -801,7 +801,7 @@ async fn init_task_scheduler(
 
             // run cache update every 5 minutes
 
-            let cache_and_broadcast_job = Job::new_async("0 1/5 * * * *", move |_uuid, mut _l| {
+            let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
                 log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
                 let registration_tx = registration_tx.clone();
@@ -837,7 +837,7 @@ async fn init_task_scheduler(
             }
             {
                 let jwt_lock = jwt_lock.clone();
-                let jwt_job = Job::new_async("1/10 * * * * *", move |_uuid, mut _l| {
+                let jwt_job = Job::new_async("0 * * * * *", move |_uuid, mut _l| {
                     let jwt_lock = jwt_lock.clone();
                     Box::pin(async move {
                         let mut wr = jwt_lock.write_owned().await;
