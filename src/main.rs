@@ -654,8 +654,8 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     // you guessed it
     conn.prepare(
         "create table if not exists meals (
-            mensa_and_date text,
-            json_text
+            mensa_and_date text unique,
+            json_text text
         )",
     )
     .unwrap()
