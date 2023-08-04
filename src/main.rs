@@ -160,8 +160,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(case![State::AwaitTimeReply].endpoint(process_time_reply))
         .branch(dptree::endpoint(invalid_cmd));
 
-    let callback_query_handler =
-        Update::filter_callback_query().endpoint(callback_handler);
+    let callback_query_handler = Update::filter_callback_query().endpoint(callback_handler);
 
     dialogue::enter::<Update, InMemStorage<State>, State, _>()
         .branch(message_handler)
@@ -599,7 +598,8 @@ async fn process_time_reply(
 }
 
 async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
-    bot.send_message(msg.chat.id, "Das ist kein Befehl.").await?;
+    bot.send_message(msg.chat.id, "Das ist kein Befehl.")
+        .await?;
     Ok(())
 }
 
