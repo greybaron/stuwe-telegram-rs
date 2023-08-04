@@ -36,8 +36,6 @@ pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {
-    #[error("Keine Zeit übergeben")]
-    NoTimePassed,
     #[error("Zeit konnte nicht gelesen werden")]
     InvalidTimePassed,
 }

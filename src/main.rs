@@ -23,13 +23,27 @@ use std::{
     time::Instant,
 };
 use teloxide::{
+    dispatching::{
+        dialogue::{self, InMemStorage},
+        UpdateHandler,
+    },
     prelude::*,
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Me, MessageId, ParseMode},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId, ParseMode},
     utils::{command::BotCommands, markdown},
 };
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
+
+#[derive(Clone, Default)]
+pub enum State {
+    #[default]
+    Default,
+    AwaitTimeReply,
+}
+
+type MyDialogue = Dialogue<State, InMemStorage<State>>;
+type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 #[macro_use]
 extern crate cfg_if;
@@ -89,12 +103,7 @@ async fn main() {
     let bot = Bot::from_env();
     let bot_tasksched = bot.clone();
 
-    let handler = dptree::entry()
-        .branch(Update::filter_message().endpoint(command_handler))
-        .branch(Update::filter_callback_query().endpoint(callback_handler));
-
-    // chat_id -> opt(job_uuid), mensa_id
-    // every user has a mensa_id, but only users with auto send have a job_uuid
+    // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
     let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
     {
         #[cfg(feature = "mensimates")]
@@ -115,16 +124,48 @@ async fn main() {
             .await;
         });
     }
-
+    const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
     // passing a receiver doesnt work for some reason, so sending query_registration_tx and resubscribing to get rx
-    let command_handler_deps =
-        dptree::deps![mensen, registration_tx, query_registration_tx, jwt_lock];
-    Dispatcher::builder(bot, handler)
+    let command_handler_deps = dptree::deps![
+        InMemStorage::<State>::new(),
+        mensen,
+        registration_tx,
+        query_registration_tx,
+        NO_DB_MSG,
+        jwt_lock
+    ];
+    Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
         .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
+}
+
+fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
+    use dptree::case;
+
+    let command_handler = teloxide::filter_command::<Command, _>()
+        .branch(dptree::case![Command::Start].endpoint(start))
+        .branch(dptree::case![Command::Heute].endpoint(day_cmd))
+        .branch(dptree::case![Command::Morgen].endpoint(day_cmd))
+        .branch(dptree::case![Command::Uebermorgen].endpoint(day_cmd))
+        .branch(dptree::case![Command::Subscribe].endpoint(subscribe))
+        .branch(dptree::case![Command::Unsubscribe].endpoint(unsubscribe))
+        .branch(dptree::case![Command::Mensa].endpoint(change_mensa))
+        .branch(dptree::case![Command::Uhrzeit].endpoint(start_time_dialogue));
+
+    let message_handler = Update::filter_message()
+        .branch(command_handler)
+        .branch(case![State::AwaitTimeReply].endpoint(process_time_reply))
+        .branch(dptree::endpoint(invalid_cmd));
+
+    let callback_query_handler =
+        Update::filter_callback_query().branch(case![State::Default].endpoint(callback_handler));
+
+    dialogue::enter::<Update, InMemStorage<State>, State, _>()
+        .branch(message_handler)
+        .branch(callback_query_handler)
 }
 
 async fn callback_handler(
@@ -189,7 +230,7 @@ async fn callback_handler(
                     )
                     .await?;
 
-                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa, bzw\\.\n/uhrzeit \\[Zeit\\]", markdown::bold(arg)))
+                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder\\.\n/uhrzeit", markdown::bold(arg)))
                     .parse_mode(ParseMode::MarkdownV2).await?;
 
                     let text = build_meal_message(
@@ -278,6 +319,273 @@ async fn callback_handler(
     Ok(())
 }
 
+async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
+    let keyboard = make_mensa_keyboard(mensen, false);
+    bot.send_message(msg.chat.id, "Mensa auswählen:")
+        .reply_markup(keyboard)
+        .await?;
+    Ok(())
+}
+
+async fn day_cmd(
+    bot: Bot,
+    msg: Message,
+    cmd: Command,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    let days_forward = match cmd {
+        Command::Heute => 0,
+        Command::Morgen => 1,
+        Command::Uebermorgen => 2,
+        _ => panic!(),
+    };
+
+    let now = Instant::now();
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
+        .unwrap();
+
+    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
+        if let Some(callback_id) = registration.4 {
+            _ = bot
+                .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
+                .await;
+        }
+        let text = build_meal_message(
+            days_forward,
+            registration.1,
+            #[cfg(feature = "mensimates")]
+            jwt_lock,
+        )
+        .await;
+        log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
+        let now = Instant::now();
+
+        let keyboard = make_days_keyboard();
+        bot.send_message(msg.chat.id, text)
+            .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(keyboard)
+            .await?;
+
+        log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
+
+        registration_tx
+            .send(make_query_data(msg.chat.id.0))
+            .unwrap();
+        let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
+        if let Some(callback_id) = prev_reg.4 {
+            _ = bot
+                .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
+                .await;
+        }
+
+        // send message callback id to store
+        let task = JobHandlerTask {
+            job_type: JobType::InsertCallbackMessageId,
+            chat_id: Some(msg.chat.id.0),
+            mensa_id: None,
+            hour: None,
+            minute: None,
+            callback_id: Some(msg.id.0),
+        };
+        update_db_row(&task).unwrap();
+        registration_tx.send(task).unwrap();
+    } else {
+        // every user has a registration (starting the chat always calls /start)
+        // if this is none, it most likely means the DB was wiped)
+        // forcing reregistration is better than crashing the bot, no data will be overwritten anyways
+        // but copy pasting this everywhere is ugly
+        bot.send_message(msg.chat.id, no_db_message).await?;
+    }
+    Ok(())
+}
+
+async fn subscribe(
+    bot: Bot,
+    msg: Message,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
+        .unwrap();
+    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
+        registration_tx
+            .send(make_query_data(msg.chat.id.0))
+            .unwrap();
+        let uuid = registration.0; //.unwrap().expect("try to operate on non-existing registration");
+
+        if uuid.is_some() {
+            bot.send_message(
+                msg.chat.id,
+                "Automatische Nachrichten sind schon aktiviert.",
+            )
+            .await?;
+        } else {
+            bot.send_message(
+                        msg.chat.id,
+                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /uhrzeit",
+                    )
+                    .await?;
+
+            let registration_job = JobHandlerTask {
+                job_type: JobType::UpdateRegistration,
+                chat_id: Some(msg.chat.id.0),
+                mensa_id: None,
+                hour: Some(6),
+                minute: Some(0),
+                callback_id: None,
+            };
+
+            registration_tx.send(registration_job).unwrap();
+        }
+    } else {
+        bot.send_message(msg.chat.id, no_db_message).await?;
+    }
+
+    Ok(())
+}
+
+async fn unsubscribe(
+    bot: Bot,
+    msg: Message,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
+        .unwrap();
+    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
+        let uuid = registration.0;
+
+        if uuid.is_none() {
+            bot.send_message(
+                msg.chat.id,
+                "Automatische Nachrichten waren bereits deaktiviert.",
+            )
+            .await?;
+        } else {
+            bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.")
+                .await?;
+
+            registration_tx
+                .send(JobHandlerTask {
+                    job_type: JobType::Unregister,
+                    chat_id: Some(msg.chat.id.0),
+                    mensa_id: None,
+                    hour: None,
+                    minute: None,
+                    callback_id: None,
+                })
+                .unwrap();
+        }
+    } else {
+        bot.send_message(msg.chat.id, no_db_message).await?;
+    }
+    Ok(())
+}
+
+async fn change_mensa(
+    bot: Bot,
+    msg: Message,
+    mensen: BTreeMap<&str, u8>,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
+        .unwrap();
+    if query_registration_rx.recv().await.unwrap().is_some() {
+        let keyboard = make_mensa_keyboard(mensen, true);
+        bot.send_message(msg.chat.id, "Mensa auswählen:")
+            .reply_markup(keyboard)
+            .await?;
+    } else {
+        bot.send_message(msg.chat.id, no_db_message).await?;
+    }
+    Ok(())
+}
+
+async fn start_time_dialogue(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
+    bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
+        .await
+        .unwrap();
+    dialogue.update(State::AwaitTimeReply).await.unwrap();
+    Ok(())
+}
+
+async fn process_time_reply(
+    bot: Bot,
+    msg: Message,
+    dialogue: MyDialogue,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
+        .unwrap();
+    if query_registration_rx.recv().await.unwrap().is_some() {
+        if let Some(txt) = msg.text() {
+            match parse_time(txt) {
+                Ok((hour, minute)) => {
+                    bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
+                    dialogue.exit().await.unwrap();
+
+                    let registration_job = JobHandlerTask {
+                        job_type: JobType::UpdateRegistration,
+                        chat_id: Some(msg.chat.id.0),
+                        mensa_id: None,
+                        hour: Some(hour),
+                        minute: Some(minute),
+                        callback_id: None,
+                    };
+                    registration_tx.send(registration_job).unwrap();
+                }
+                Err(TimeParseError::InvalidTimePassed) => {
+                    bot.send_message(
+                        msg.chat.id,
+                        "Eingegebene Zeit ist ungültig.\nBitte mit Uhrzeit antworten:",
+                    )
+                    .await?;
+                }
+            }
+        } else {
+            bot.send_message(
+                msg.chat.id,
+                "Das ist kein Text.\nBitte mit Uhrzeit antworten:",
+            )
+            .await?;
+        };
+    } else {
+        bot.send_message(msg.chat.id, no_db_message).await?;
+        dialogue.exit().await.unwrap();
+    }
+
+    Ok(())
+}
+
+async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
+    bot.send_message(msg.chat.id, "Ungültiger Befehl").await?;
+    Ok(())
+}
+
 fn make_query_data(chat_id: i64) -> JobHandlerTask {
     JobHandlerTask {
         job_type: JobType::QueryRegistration,
@@ -287,222 +595,6 @@ fn make_query_data(chat_id: i64) -> JobHandlerTask {
         minute: None,
         callback_id: None,
     }
-}
-
-async fn command_handler(
-    bot: Bot,
-    msg: Message,
-    me: Me,
-    mensen: BTreeMap<&str, u8>,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    #[cfg(feature = "mensimates")] jwt_lock: Arc<RwLock<String>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-    const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
-
-    if let Some(text) = msg.text() {
-        match BotCommands::parse(text, me.username()) {
-            Ok(cmd)
-                if cmd == Command::Heute
-                    || cmd == Command::Morgen
-                    || cmd == Command::Uebermorgen =>
-            {
-                let days_forward = match cmd {
-                    Command::Heute => 0,
-                    Command::Morgen => 1,
-                    Command::Uebermorgen => 2,
-                    _ => panic!(),
-                };
-
-                let now = Instant::now();
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-
-                if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    if let Some(callback_id) = registration.4 {
-                        _ = bot
-                            .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
-                            .await;
-                    }
-                    let text = build_meal_message(
-                        days_forward,
-                        registration.1,
-                        #[cfg(feature = "mensimates")]
-                        jwt_lock,
-                    )
-                    .await;
-                    log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
-                    let now = Instant::now();
-
-                    let keyboard = make_days_keyboard();
-                    bot.send_message(msg.chat.id, text)
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(keyboard)
-                        .await?;
-
-                    log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
-
-                    registration_tx
-                        .send(make_query_data(msg.chat.id.0))
-                        .unwrap();
-                    let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-                    if let Some(callback_id) = prev_reg.4 {
-                        _ = bot
-                            .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
-                            .await;
-                    }
-
-                    // send message callback id to store
-                    let task = JobHandlerTask {
-                        job_type: JobType::InsertCallbackMessageId,
-                        chat_id: Some(msg.chat.id.0),
-                        mensa_id: None,
-                        hour: None,
-                        minute: None,
-                        callback_id: Some(msg.id.0),
-                    };
-                    update_db_row(&task).unwrap();
-                    registration_tx.send(task).unwrap();
-                } else {
-                    // every user has a registration (starting the chat always calls /start)
-                    // if this is none, it most likely means the DB was wiped)
-                    // forcing reregistration is better than crashing the bot, no data will be overwritten anyways
-                    // but copy pasting this everywhere is ugly
-                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
-                }
-            }
-            Ok(Command::Start) => {
-                let keyboard = make_mensa_keyboard(mensen, false);
-                bot.send_message(msg.chat.id, "Mensa auswählen:")
-                    .reply_markup(keyboard)
-                    .await?;
-            }
-            Ok(Command::Mensa) => {
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-                if query_registration_rx.recv().await.unwrap().is_some() {
-                    let keyboard = make_mensa_keyboard(mensen, true);
-                    bot.send_message(msg.chat.id, "Mensa auswählen:")
-                        .reply_markup(keyboard)
-                        .await?;
-                } else {
-                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
-                }
-            }
-            Ok(Command::Subscribe) => {
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-                if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    registration_tx
-                        .send(make_query_data(msg.chat.id.0))
-                        .unwrap();
-                    let uuid = registration.0; //.unwrap().expect("try to operate on non-existing registration");
-
-                    if uuid.is_some() {
-                        bot.send_message(
-                            msg.chat.id,
-                            "Automatische Nachrichten sind schon aktiviert.",
-                        )
-                        .await?;
-                    } else {
-                        bot.send_message(
-                        msg.chat.id,
-                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /uhrzeit [Zeit]",
-                    )
-                    .await?;
-
-                        let registration_job = JobHandlerTask {
-                            job_type: JobType::UpdateRegistration,
-                            chat_id: Some(msg.chat.id.0),
-                            mensa_id: None,
-                            hour: Some(6),
-                            minute: Some(0),
-                            callback_id: None,
-                        };
-
-                        registration_tx.send(registration_job).unwrap();
-                    }
-                } else {
-                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
-                }
-            }
-
-            Ok(Command::Unsubscribe) => {
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-                if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-                    let uuid = registration.0;
-
-                    if uuid.is_none() {
-                        bot.send_message(
-                            msg.chat.id,
-                            "Automatische Nachrichten waren bereits deaktiviert.",
-                        )
-                        .await?;
-                    } else {
-                        bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.")
-                            .await?;
-
-                        registration_tx
-                            .send(JobHandlerTask {
-                                job_type: JobType::Unregister,
-                                chat_id: Some(msg.chat.id.0),
-                                mensa_id: None,
-                                hour: None,
-                                minute: None,
-                                callback_id: None,
-                            })
-                            .unwrap();
-                    }
-                } else {
-                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
-                }
-            }
-            Ok(Command::Uhrzeit) => {
-                registration_tx
-                    .send(make_query_data(msg.chat.id.0))
-                    .unwrap();
-                if query_registration_rx.recv().await.unwrap().is_some() {
-                    match parse_time(msg.text().unwrap()) {
-                        Ok((hour, minute)) => {
-                            bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-
-                            let registration_job = JobHandlerTask {
-                                job_type: JobType::UpdateRegistration,
-                                chat_id: Some(msg.chat.id.0),
-                                mensa_id: None,
-                                hour: Some(hour),
-                                minute: Some(minute),
-                                callback_id: None,
-                            };
-                            registration_tx.send(registration_job).unwrap();
-                        }
-                        Err(TimeParseError::NoTimePassed) => {
-                            bot.send_message(msg.chat.id, "Bitte Zeit angeben\n/uhrzeit [Zeit]")
-                                .await?;
-                        }
-                        Err(TimeParseError::InvalidTimePassed) => {
-                            bot.send_message(msg.chat.id, "Eingegebene Zeit ist ungültig.")
-                                .await?;
-                        }
-                    };
-                } else {
-                    bot.send_message(msg.chat.id, NO_DB_MSG).await?;
-                }
-            }
-            Err(_) => {
-                bot.send_message(msg.chat.id, "Ungültiger Befehl").await?;
-            }
-            _ => {}
-        }
-    }
-
-    Ok(())
 }
 
 fn make_mensa_keyboard(mensen: BTreeMap<&str, u8>, only_mensa_upd: bool) -> InlineKeyboardMarkup {
@@ -640,16 +732,6 @@ fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     .unwrap()
     .execute([])
     .unwrap();
-
-    // // ensure db table exists
-    // conn.prepare(
-    //     "create table if not exists jwt (
-    //         token text
-    //     )",
-    // )
-    // .unwrap()
-    // .execute([])
-    // .unwrap();
 
     // you guessed it
     conn.prepare(
@@ -1128,20 +1210,20 @@ enum Command {
 }
 
 fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
-    if let Some(first_arg) = txt.split(' ').nth(1) {
-        #[dynamic]
-        static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-        if !RE.is_match(first_arg) {
-            Err(TimeParseError::InvalidTimePassed)
-        } else {
-            let caps = RE.captures(first_arg).unwrap();
-
-            let hour = caps.get(1).unwrap().as_str().parse::<u32>().unwrap();
-            let minute = caps.get(2).unwrap().as_str().parse::<u32>().unwrap();
-
-            Ok((hour, minute))
-        }
+    // if let Some(first_arg) = txt.split(' ').nth(1) {
+    #[dynamic]
+    static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
+    if !RE.is_match(txt) {
+        Err(TimeParseError::InvalidTimePassed)
     } else {
-        Err(TimeParseError::NoTimePassed)
+        let caps = RE.captures(txt).unwrap();
+
+        let hour = caps.get(1).unwrap().as_str().parse::<u32>().unwrap();
+        let minute = caps.get(2).unwrap().as_str().parse::<u32>().unwrap();
+
+        Ok((hour, minute))
     }
+    // } else {
+    //     Err(TimeParseError::NoTimePassed)
+    // }
 }
