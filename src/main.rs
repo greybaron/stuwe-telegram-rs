@@ -520,11 +520,28 @@ async fn change_mensa(
     Ok(())
 }
 
-async fn start_time_dialogue(bot: Bot, msg: Message, dialogue: MyDialogue) -> HandlerResult {
-    bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
-        .await
+async fn start_time_dialogue(
+    bot: Bot,
+    msg: Message,
+    dialogue: MyDialogue,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    no_db_message: &str,
+) -> HandlerResult {
+    let mut query_registration_rx = query_registration_tx.subscribe();
+
+    registration_tx
+        .send(make_query_data(msg.chat.id.0))
         .unwrap();
-    dialogue.update(State::AwaitTimeReply).await.unwrap();
+    if query_registration_rx.recv().await.unwrap().is_some() {
+        bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
+            .await
+            .unwrap();
+        dialogue.update(State::AwaitTimeReply).await.unwrap();
+    } else {
+        bot.send_message(msg.chat.id, no_db_message).await.unwrap();
+        dialogue.exit().await.unwrap();
+    }
     Ok(())
 }
 
