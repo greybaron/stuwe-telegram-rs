@@ -229,7 +229,7 @@ async fn callback_handler(
                     )
                     .await?;
 
-                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder\\.\n/uhrzeit", markdown::bold(arg)))
+                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
                     .parse_mode(ParseMode::MarkdownV2).await?;
 
                     let text = build_meal_message(
