@@ -1,6 +1,5 @@
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::mm_data_types::MealGroup;
-
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 use rand::Rng;
 use teloxide::utils::markdown;

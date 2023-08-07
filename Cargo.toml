@@ -4,8 +4,15 @@ version = "1.2.0"
 edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[[bin]]
+name = "stuwe-telegram-rs"
+path = "src/bin/stuwe-telegram-bin.rs"
+
+[[bin]]
+name = "mm-telegram-rs"
+path = "src/bin/mm-telegram-bin.rs"
+
 [dependencies]
-cfg-if = "1.0.0"
 chrono = "0.4.26"
 log = "0.4"
 pretty_env_logger = "0.5"
@@ -24,10 +31,6 @@ thiserror = "1.0.43"
 tokio = { version = "1.29.1", features = ["rt-multi-thread", "macros"] }
 tokio-cron-scheduler = "*"
 uuid = "1.4.0"
-
-[features]
-#default = ["mensimates"]
-mensimates = []
 
 [profile.release]
 strip = true

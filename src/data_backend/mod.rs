@@ -1,12 +1,7 @@
 use chrono::{Datelike, NaiveDate};
 
-cfg_if! {
-    if #[cfg(feature = "mensimates")] {
-        pub mod mm_parser;
-    } else {
-        pub mod stuwe_parser;
-    }
-}
+pub mod mm_parser;
+pub mod stuwe_parser;
 
 const EMOJIS: [&str; 7] = ["☀️", "🦀", "💂🏻‍♀️", "☕️", "☝🏻", "🌤️", "🥦"];
 
