@@ -254,7 +254,7 @@ async fn callback_handler(
                             minute: None,
                             callback_id: Some(msg.id.0),
                         };
-                        update_db_row(&task).unwrap();
+                        update_db_row(&task, "mm_storage.sqlite").unwrap();
                         registration_tx.send(task).unwrap();
                     } else {
                         bot.send_message(chat.id, NO_DB_MSG).await?;
@@ -335,7 +335,7 @@ async fn day_cmd(
             minute: None,
             callback_id: Some(msg.id.0),
         };
-        update_db_row(&task).unwrap();
+        update_db_row(&task, "mm_storage.sqlite").unwrap();
         registration_tx.send(task).unwrap();
     } else {
         // every user has a registration (starting the chat always calls /start)
@@ -588,7 +588,7 @@ async fn load_job(
                     minute: None,
                     callback_id: Some(msg.id.0),
                 };
-                update_db_row(&task).unwrap();
+                update_db_row(&task, "mm_storage.sqlite").unwrap();
                 registration_tx.send(task).unwrap();
             })
         },
@@ -610,7 +610,7 @@ async fn init_task_scheduler(
     mensen_ids: Vec<u8>,
 ) {
     let registr_tx_loadjob = registration_tx.clone();
-    let tasks_from_db = get_all_tasks_db();
+    let tasks_from_db = get_all_tasks_db("mm_storage.sqlite");
     let sched = JobScheduler::new().await.unwrap();
 
     // always update cache on startup
@@ -683,7 +683,7 @@ async fn init_task_scheduler(
             JobType::Register => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Register: {} for Mensa {}", &job_handler_task.chat_id.unwrap(), &job_handler_task.mensa_id.unwrap());
                 // creates a new row, or replaces every col with new values
-                init_db_record(&job_handler_task).unwrap();
+                init_db_record(&job_handler_task, "mm_storage.sqlite").unwrap();
 
                 let previous_callback_msg = if let Some(previous_registration) =
                     loaded_user_data.get(&job_handler_task.chat_id.unwrap())
@@ -783,7 +783,7 @@ async fn init_task_scheduler(
                     );
 
                     // update any values that are to be changed, aka are Some()
-                    update_db_row(&job_handler_task).unwrap();
+                    update_db_row(&job_handler_task, "mm_storage.sqlite").unwrap();
                 } else {
                     log::error!("Tried to update non-existent job");
                     bot.send_message(ChatId(job_handler_task.chat_id.unwrap()), NO_DB_MSG)
@@ -826,7 +826,7 @@ async fn init_task_scheduler(
                 );
 
                 // delete from db
-                task_db_kill_auto(job_handler_task.chat_id.unwrap()).unwrap();
+                task_db_kill_auto(job_handler_task.chat_id.unwrap(), "mm_storage.sqlite").unwrap();
             }
 
             JobType::QueryRegistration => {

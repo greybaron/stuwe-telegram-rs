@@ -2,8 +2,8 @@ use rusqlite::{params, Connection};
 
 use crate::data_types::{JobHandlerTask, JobType};
 
-pub fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("storage.sqlite")?;
+pub fn update_db_row(data: &JobHandlerTask, sql_filename: &str) -> rusqlite::Result<()> {
+    let conn = Connection::open(sql_filename)?;
 
     // could be better but eh
     let mut update_mensa_stmt = conn
@@ -57,8 +57,8 @@ pub fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
-    let conn = Connection::open("storage.sqlite")?;
+pub fn task_db_kill_auto(chat_id: i64, sql_filename: &str) -> rusqlite::Result<()> {
+    let conn = Connection::open(sql_filename)?;
     let mut stmt = conn
         .prepare_cached(
             "UPDATE registrations
@@ -72,9 +72,9 @@ pub fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn get_all_tasks_db() -> Vec<JobHandlerTask> {
+pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
-    let conn = Connection::open("storage.sqlite").unwrap();
+    let conn = Connection::open(sql_filename).unwrap();
 
     // ensure db table exists
     conn.prepare(
@@ -127,8 +127,8 @@ pub fn get_all_tasks_db() -> Vec<JobHandlerTask> {
     tasks
 }
 
-pub fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
-    let conn = Connection::open("storage.sqlite")?;
+pub fn init_db_record(job_handler_task: &JobHandlerTask, sql_filename: &str) -> rusqlite::Result<()> {
+    let conn = Connection::open(sql_filename)?;
     let mut stmt = conn
         .prepare_cached(
             "replace into registrations (chat_id, mensa_id, hour, minute)

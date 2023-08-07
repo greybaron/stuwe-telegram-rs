@@ -20,6 +20,7 @@ pub const MENSEN: [(&str, u8); 9] = [
 ];
 
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
+pub const MM_DB: &str = "mm_storage.sqlite";
 
 #[derive(BotCommands, Clone, Debug, PartialEq)]
 #[command(rename_rule = "lowercase")]

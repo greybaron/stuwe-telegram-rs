@@ -1,6 +1,6 @@
 /target
 storage.sqlite
-/cached_data
+mm_storage.sqlite
+
 .cargo/
 build.sh
-Cargo.tomlnsp
