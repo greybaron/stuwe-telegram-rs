@@ -619,19 +619,23 @@ async fn init_task_scheduler(
     // if mensimates, create job to reload token every minute
     // reload now
     {
+        let now = Instant::now();
         log::debug!("Updating JWT token");
         let jwt_lock = jwt_lock.clone();
         let mut wr = jwt_lock.write_owned().await;
         *wr = get_jwt_token().await;
+        log::debug!("Got JWT: {:.2?}", now.elapsed());
     }
     {
         let jwt_lock = jwt_lock.clone();
         let jwt_job = Job::new_async("0 * * * * *", move |_uuid, mut _l| {
             let jwt_lock = jwt_lock.clone();
             Box::pin(async move {
+                let now = Instant::now();
                 log::debug!("Updating JWT token");
                 let mut wr = jwt_lock.write_owned().await;
                 *wr = get_jwt_token().await;
+                log::debug!("Got JWT: {:.2?}", now.elapsed());
             })
         })
         .unwrap();

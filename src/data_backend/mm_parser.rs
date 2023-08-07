@@ -28,12 +28,12 @@ async fn mm_json_request(
     day: DateTime<Local>,
     mensa_id: u8,
     jwt_lock: Arc<RwLock<String>>,
-) -> Option<String> {
+) -> Result<String, reqwest::Error> {
     let (date, mensa) = build_url_params(day, mensa_id);
 
     let req_now = Instant::now();
     let mm_json = get_mensimates_json(&mensa, &date, jwt_lock).await;
-    log::debug!("got MM json after {:.2?}", req_now.elapsed());
+    log::debug!("got MM data after {:.2?}", req_now.elapsed());
 
     mm_json
 }
@@ -67,7 +67,7 @@ async fn get_mensimates_json(
     mensa: &str,
     date: &str,
     jwt_lock: Arc<RwLock<String>>,
-) -> Option<String> {
+) -> Result<String, reqwest::Error> {
     let client = reqwest::Client::new();
 
     let token = jwt_lock.read().await.clone();
@@ -82,8 +82,15 @@ async fn get_mensimates_json(
         .await;
 
     match response {
-        Ok(t) => Some(t.text().await.unwrap()),
-        Err(_) => None,
+        Ok(t) => {
+            match t.status() {
+                reqwest::StatusCode::OK => Ok(t.text().await.unwrap()),
+                _ => {
+                    Err(t.error_for_status().unwrap_err())
+                }
+            }
+        },
+        Err(e) => Err(e),
     }
 }
 
@@ -140,7 +147,7 @@ pub async fn build_meal_message(
     );
 
     match day_meals {
-        Some(meals) => {
+        Ok(meals) => {
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
@@ -190,8 +197,9 @@ pub async fn build_meal_message(
                 }
             }
         }
-        None => {
-            msg += &markdown::bold("\nMensiMates-Abfrage fehlgeschlagen.\n");
+        Err(e) => {
+            msg += &markdown::bold("\nMensiMates-Abfrage fehlgeschlagen:\n");
+            msg += &e.to_string().replace('_', r"\_");
         }
     }
 
@@ -202,14 +210,14 @@ async fn get_meals(
     requested_date: DateTime<Local>,
     mensa_location: u8,
     jwt_lock: Arc<RwLock<String>>,
-) -> Option<Vec<MealGroup>> {
+) -> Result<Vec<MealGroup>, reqwest::Error> {
     let mm_json = mm_json_request(requested_date, mensa_location, jwt_lock).await;
 
     match mm_json {
-        Some(text) => {
+        Ok(text) => {
             let day_meal_groups: Vec<MealGroup> = serde_json::from_str(&text).unwrap();
-            Some(day_meal_groups)
+            Ok(day_meal_groups)
         }
-        None => None,
+        Err(e) => Err(e),
     }
 }
