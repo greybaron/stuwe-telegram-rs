@@ -66,7 +66,10 @@ pub type JobHandlerTaskType = (
     broadcast::Receiver<JobHandlerTask>,
 );
 
-pub type QueryRegistrationType = (broadcast::Sender<Option<RegistrationEntry>>, broadcast::Receiver<Option<RegistrationEntry>>);
+pub type QueryRegistrationType = (
+    broadcast::Sender<Option<RegistrationEntry>>,
+    broadcast::Receiver<Option<RegistrationEntry>>,
+);
 
 // used internally for teloxide/Telegram bot
 #[derive(Debug, Clone)]

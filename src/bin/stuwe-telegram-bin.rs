@@ -3,21 +3,20 @@ use stuwe_telegram_rs::db_operations::{
     get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
-    build_meal_message_dispatcher, callback_handler, load_job, make_days_keyboard,
-    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue, logger_init,
+    build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
+    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue,
 };
 
 use data_backend::stuwe_parser::update_cache;
 use stuwe_telegram_rs::data_types::{
-    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobType, RegistrationEntry,
-    MENSEN, NO_DB_MSG, STUWE_DB, JobHandlerTaskType, QueryRegistrationType,
+    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
+    QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
 };
 
 use chrono::Timelike;
 use log::log_enabled;
 use std::{
     collections::{BTreeMap, HashMap},
-    env,
     sync::Arc,
     time::Instant,
 };
@@ -46,12 +45,9 @@ async fn main() {
         log::info!("Set env variable 'RUST_LOG=debug' for performance metrics");
     }
 
-    let (registration_tx, job_rx): (
-        JobHandlerTaskType
-    ) = broadcast::channel(10);
-    
-    let (query_registration_tx, _): QueryRegistrationType =
-        broadcast::channel(10);
+    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
+
+    let (query_registration_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
     let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();

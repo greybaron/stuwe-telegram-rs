@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error, sync::Arc, time::Instant, env};
+use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant};
 
 use chrono::Timelike;
 use regex_lite::Regex;
