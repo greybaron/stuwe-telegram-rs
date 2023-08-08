@@ -211,7 +211,6 @@ async fn get_meals(
 
     match mm_json {
         Ok(text) => {
-            println!("JJ\n{}\nJJ", text);
             let day_meal_groups: Vec<MealGroup> = serde_json::from_str(&text).unwrap();
             Ok(day_meal_groups)
         }

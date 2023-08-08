@@ -82,7 +82,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        // .enable_ctrlc_handler()
+        .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -127,7 +127,7 @@ async fn day_cmd(
     cmd: Command,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_lock: Arc<RwLock<String>>,
+    jwt_lock: Option<Arc<RwLock<String>>>,
     no_db_message: &str,
 ) -> HandlerResult {
     let mut query_registration_rx = query_registration_tx.subscribe();
@@ -154,7 +154,7 @@ async fn day_cmd(
             Backend::MensiMates,
             days_forward,
             registration.1,
-            Some(jwt_lock),
+            jwt_lock,
         )
         .await;
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
