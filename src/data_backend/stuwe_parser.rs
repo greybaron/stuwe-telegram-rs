@@ -9,7 +9,7 @@ use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
-pub async fn build_meal_message(days_forward: i64, mensa_location: u8) -> String {
+pub async fn stuwe_b_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info

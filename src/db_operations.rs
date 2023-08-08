@@ -127,7 +127,10 @@ pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
     tasks
 }
 
-pub fn init_db_record(job_handler_task: &JobHandlerTask, sql_filename: &str) -> rusqlite::Result<()> {
+pub fn init_db_record(
+    job_handler_task: &JobHandlerTask,
+    sql_filename: &str,
+) -> rusqlite::Result<()> {
     let conn = Connection::open(sql_filename)?;
     let mut stmt = conn
         .prepare_cached(

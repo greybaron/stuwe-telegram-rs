@@ -1,21 +1,20 @@
-use stuwe_telegram_rs::data_backend::mm_parser::{build_meal_message, get_jwt_token};
+use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
 use stuwe_telegram_rs::data_types::{
-    Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask, JobType,
-    RegistrationEntry, TimeParseError, MENSEN, NO_DB_MSG, MM_DB
+    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobType, RegistrationEntry,
+    MENSEN, MM_DB, NO_DB_MSG,
 };
 use stuwe_telegram_rs::db_operations::{
     get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
-    make_days_keyboard, make_mensa_keyboard, make_query_data, parse_time, start_time_dialogue,
+    build_meal_message_dispatcher, callback_handler, load_job, make_days_keyboard,
+    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue,
 };
 
-use chrono::Timelike;
 use log::log_enabled;
 use std::{
     collections::{BTreeMap, HashMap},
     env,
-    error::Error,
     sync::Arc,
     time::Instant,
 };
@@ -26,11 +25,9 @@ use teloxide::{
     },
     prelude::*,
     types::{MessageId, ParseMode},
-    utils::{command::BotCommands, markdown},
 };
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
-use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
@@ -100,11 +97,12 @@ async fn main() {
         registration_tx,
         query_registration_tx,
         NO_DB_MSG,
-        jwt_lock
+        Backend::MensiMates,
+        Some(jwt_lock)
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -135,138 +133,155 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(callback_query_handler)
 }
 
-async fn callback_handler(
-    bot: Bot,
-    q: CallbackQuery,
-    mensen: BTreeMap<&str, u8>,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_lock: Arc<RwLock<String>>,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut query_registration_rx = query_registration_tx.subscribe();
+// async fn callback_handler(
+//     bot: Bot,
+//     q: CallbackQuery,
+//     mensen: BTreeMap<&str, u8>,
+//     registration_tx: broadcast::Sender<JobHandlerTask>,
+//     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+//     jwt_lock: Arc<RwLock<String>>,
+// ) -> Result<(), Box<dyn Error + Send + Sync>> {
+//     let mut query_registration_rx = query_registration_tx.subscribe();
 
-    if let Some(q_data) = q.data {
-        // acknowledge callback query to remove the loading alert
-        bot.answer_callback_query(q.id).await?;
+//     if let Some(q_data) = q.data {
+//         // acknowledge callback query to remove the loading alert
+//         bot.answer_callback_query(q.id).await?;
 
-        if let Some(Message { id, chat, .. }) = q.message {
-            let (cmd, arg) = q_data.split_once(':').unwrap();
-            match cmd {
-                "m_upd" => {
-                    // replace mensa selection message with selected mensa
-                    bot.edit_message_text(
-                        chat.id,
-                        id,
-                        format!("Gewählte Mensa: {}", markdown::bold(arg)),
-                    )
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .await
-                    .unwrap();
+//         if let Some(Message { id, chat, .. }) = q.message {
+//             let (cmd, arg) = q_data.split_once(':').unwrap();
+//             match cmd {
+//                 "m_upd" => {
+//                     // replace mensa selection message with selected mensa
+//                     bot.edit_message_text(
+//                         chat.id,
+//                         id,
+//                         format!("Gewählte Mensa: {}", markdown::bold(arg)),
+//                     )
+//                     .parse_mode(ParseMode::MarkdownV2)
+//                     .await
+//                     .unwrap();
 
-                    let text = build_meal_message(0, *mensen.get(arg).unwrap(), jwt_lock).await;
+//                     let text = build_meal_message_dispatcher(
+//                         true,
+//                         0,
+//                         *mensen.get(arg).unwrap(),
+//                         Some(jwt_lock),
+//                     )
+//                     .await;
 
-                    let keyboard = make_days_keyboard();
-                    bot.send_message(chat.id, text)
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(keyboard)
-                        .await?;
+//                     let keyboard = make_days_keyboard();
+//                     bot.send_message(chat.id, text)
+//                         .parse_mode(ParseMode::MarkdownV2)
+//                         .reply_markup(keyboard)
+//                         .await?;
 
-                    let task = JobHandlerTask {
-                        job_type: JobType::UpdateRegistration,
-                        chat_id: Some(chat.id.0),
-                        mensa_id: Some(*mensen.get(arg).unwrap()),
-                        hour: None,
-                        minute: None,
-                        callback_id: None,
-                    };
-                    registration_tx.send(task).unwrap();
-                }
-                "m_regist" => {
-                    let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
-                    // replace mensa selection message with list of commands
-                    bot.edit_message_text(
-                        chat.id,
-                        id,
-                        Command::descriptions().to_string() + subtext,
-                    )
-                    .await?;
+//                     let task = JobHandlerTask {
+//                         job_type: JobType::UpdateRegistration,
+//                         chat_id: Some(chat.id.0),
+//                         mensa_id: Some(*mensen.get(arg).unwrap()),
+//                         hour: None,
+//                         minute: None,
+//                         callback_id: None,
+//                     };
+//                     registration_tx.send(task).unwrap();
+//                 }
+//                 "m_regist" => {
+//                     let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
+//                     // replace mensa selection message with list of commands
+//                     bot.edit_message_text(
+//                         chat.id,
+//                         id,
+//                         Command::descriptions().to_string() + subtext,
+//                     )
+//                     .await?;
 
-                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
-                    .parse_mode(ParseMode::MarkdownV2).await?;
+//                     bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
+//                     .parse_mode(ParseMode::MarkdownV2).await?;
 
-                    let text = build_meal_message(0, *mensen.get(arg).unwrap(), jwt_lock).await;
+//                     let text = build_meal_message_dispatcher(
+//                         true,
+//                         0,
+//                         *mensen.get(arg).unwrap(),
+//                         Some(jwt_lock),
+//                     )
+//                     .await;
 
-                    let keyboard = make_days_keyboard();
-                    bot.send_message(chat.id, text)
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(keyboard)
-                        .await?;
+//                     let keyboard = make_days_keyboard();
+//                     bot.send_message(chat.id, text)
+//                         .parse_mode(ParseMode::MarkdownV2)
+//                         .reply_markup(keyboard)
+//                         .await?;
 
-                    let task = JobHandlerTask {
-                        job_type: JobType::Register,
-                        chat_id: Some(chat.id.0),
-                        mensa_id: Some(*mensen.get(arg).unwrap()),
-                        hour: Some(6),
-                        minute: Some(0),
-                        callback_id: None,
-                    };
-                    registration_tx.send(task).unwrap();
-                }
-                "day" => {
-                    registration_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let prev_reg_opt = query_registration_rx.recv().await.unwrap();
-                    if let Some(prev_registration) = prev_reg_opt {
-                        if let Some(callback_id) = prev_registration.4 {
-                            // also try to edit callback
-                            _ = bot
-                                .edit_message_reply_markup(chat.id, MessageId(callback_id))
-                                .await;
-                        }
+//                     let task = JobHandlerTask {
+//                         job_type: JobType::Register,
+//                         chat_id: Some(chat.id.0),
+//                         mensa_id: Some(*mensen.get(arg).unwrap()),
+//                         hour: Some(6),
+//                         minute: Some(0),
+//                         callback_id: None,
+//                     };
+//                     registration_tx.send(task).unwrap();
+//                 }
+//                 "day" => {
+//                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
+//                     let prev_reg_opt = query_registration_rx.recv().await.unwrap();
+//                     if let Some(prev_registration) = prev_reg_opt {
+//                         if let Some(callback_id) = prev_registration.4 {
+//                             // also try to edit callback
+//                             _ = bot
+//                                 .edit_message_reply_markup(chat.id, MessageId(callback_id))
+//                                 .await;
+//                         }
 
-                        // also try to remove answered query anyway, as a fallback (the more the merrier)
-                        _ = bot.edit_message_reply_markup(chat.id, id).await;
+//                         // also try to remove answered query anyway, as a fallback (the more the merrier)
+//                         _ = bot.edit_message_reply_markup(chat.id, id).await;
 
-                        // start building message
-                        let now = Instant::now();
+//                         // start building message
+//                         let now = Instant::now();
 
-                        let days_forward = arg.parse::<i64>().unwrap();
-                        let day_str = ["Heute", "Morgen", "Übermorgen"]
-                            [usize::try_from(days_forward).unwrap()];
+//                         let days_forward = arg.parse::<i64>().unwrap();
+//                         let day_str = ["Heute", "Morgen", "Übermorgen"]
+//                             [usize::try_from(days_forward).unwrap()];
 
-                        let text =
-                            build_meal_message(days_forward, prev_registration.1, jwt_lock).await;
-                        log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
-                        let now = Instant::now();
+//                         let text = build_meal_message_dispatcher(
+//                             true,
+//                             days_forward,
+//                             prev_registration.1,
+//                             Some(jwt_lock),
+//                         )
+//                         .await;
+//                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
+//                         let now = Instant::now();
 
-                        let keyboard = make_days_keyboard();
-                        let msg = bot
-                            .send_message(chat.id, text)
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .reply_markup(keyboard)
-                            .await?;
-                        log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
+//                         let keyboard = make_days_keyboard();
+//                         let msg = bot
+//                             .send_message(chat.id, text)
+//                             .parse_mode(ParseMode::MarkdownV2)
+//                             .reply_markup(keyboard)
+//                             .await?;
+//                         log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
 
-                        let task = JobHandlerTask {
-                            job_type: JobType::InsertCallbackMessageId,
-                            chat_id: Some(chat.id.0),
-                            mensa_id: None,
-                            hour: None,
-                            minute: None,
-                            callback_id: Some(msg.id.0),
-                        };
-                        update_db_row(&task, MM_DB).unwrap();
-                        registration_tx.send(task).unwrap();
-                    } else {
-                        bot.send_message(chat.id, NO_DB_MSG).await?;
-                    }
-                }
-                _ => panic!("Unknown callback query command: {}", cmd),
-            }
-        }
-    }
+//                         let task = JobHandlerTask {
+//                             job_type: JobType::InsertCallbackMessageId,
+//                             chat_id: Some(chat.id.0),
+//                             mensa_id: None,
+//                             hour: None,
+//                             minute: None,
+//                             callback_id: Some(msg.id.0),
+//                         };
+//                         update_db_row(&task, MM_DB).unwrap();
+//                         registration_tx.send(task).unwrap();
+//                     } else {
+//                         bot.send_message(chat.id, NO_DB_MSG).await?;
+//                     }
+//                 }
+//                 _ => panic!("Unknown callback query command: {}", cmd),
+//             }
+//         }
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
     let keyboard = make_mensa_keyboard(mensen, false);
@@ -305,7 +320,13 @@ async fn day_cmd(
                 .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
                 .await;
         }
-        let text = build_meal_message(days_forward, registration.1, jwt_lock).await;
+        let text = build_meal_message_dispatcher(
+            Backend::MensiMates,
+            days_forward,
+            registration.1,
+            Some(jwt_lock),
+        )
+        .await;
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
@@ -463,145 +484,10 @@ async fn change_mensa(
     Ok(())
 }
 
-async fn process_time_reply(
-    bot: Bot,
-    msg: Message,
-    dialogue: DialogueType,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if query_registration_rx.recv().await.unwrap().is_some() {
-        if let Some(txt) = msg.text() {
-            match parse_time(txt) {
-                Ok((hour, minute)) => {
-                    bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-                    dialogue.exit().await.unwrap();
-
-                    let registration_job = JobHandlerTask {
-                        job_type: JobType::UpdateRegistration,
-                        chat_id: Some(msg.chat.id.0),
-                        mensa_id: None,
-                        hour: Some(hour),
-                        minute: Some(minute),
-                        callback_id: None,
-                    };
-                    registration_tx.send(registration_job).unwrap();
-                }
-                Err(TimeParseError::InvalidTimePassed) => {
-                    bot.send_message(
-                        msg.chat.id,
-                        "Eingegebene Zeit ist ungültig.\nBitte mit Uhrzeit antworten:",
-                    )
-                    .await?;
-                }
-            }
-        } else {
-            bot.send_message(
-                msg.chat.id,
-                "Das ist kein Text.\nBitte mit Uhrzeit antworten:",
-            )
-            .await?;
-        };
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await?;
-        dialogue.exit().await.unwrap();
-    }
-
-    Ok(())
-}
-
 async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
     bot.send_message(msg.chat.id, "Das ist kein Befehl.")
         .await?;
     Ok(())
-}
-
-async fn load_job(
-    bot: Bot,
-    sched: &JobScheduler,
-    task: JobHandlerTask,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_rx: broadcast::Receiver<Option<RegistrationEntry>>,
-    jwt_lock: Arc<RwLock<String>>,
-) -> Option<Uuid> {
-    // return if no time is set
-    task.hour?;
-
-    // convert de time to utc
-    let de_time = chrono::Local::now()
-        .with_hour(task.hour.unwrap())
-        .unwrap()
-        .with_minute(task.minute.unwrap())
-        .unwrap()
-        .with_second(0)
-        .unwrap();
-    let utc_time = de_time.naive_utc();
-
-    let job = Job::new_async(
-        format!(
-            "0 {} {} * * Mon,Tue,Wed,Thu,Fri",
-            utc_time.minute(),
-            utc_time.hour()
-        )
-        .as_str(),
-        move |_uuid, mut _l| {
-            let jwt_lock = jwt_lock.clone();
-            let bot = bot.clone();
-            let registration_tx = registration_tx.clone();
-            let mut query_registration_rx = query_registration_rx.resubscribe();
-
-            Box::pin(async move {
-                let keyboard = make_days_keyboard();
-                let msg = bot
-                    .send_message(
-                        ChatId(task.chat_id.unwrap()),
-                        build_meal_message(0, task.mensa_id.unwrap(), jwt_lock).await,
-                    )
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(keyboard)
-                    .await
-                    .unwrap();
-
-                registration_tx
-                    .send(make_query_data(task.chat_id.unwrap()))
-                    .unwrap();
-
-                let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-                if let Some(callback_id) = prev_reg.4 {
-                    _ = bot
-                        .edit_message_reply_markup(
-                            ChatId(task.chat_id.unwrap()),
-                            MessageId(callback_id),
-                        )
-                        .await;
-                };
-
-                // send message callback id to store
-                let task = JobHandlerTask {
-                    job_type: JobType::InsertCallbackMessageId,
-                    chat_id: Some(task.chat_id.unwrap()),
-                    mensa_id: None,
-                    hour: None,
-                    minute: None,
-                    callback_id: Some(msg.id.0),
-                };
-                update_db_row(&task, MM_DB).unwrap();
-                registration_tx.send(task).unwrap();
-            })
-        },
-    )
-    .unwrap();
-
-    let uuid = job.guid();
-    sched.add(job).await.unwrap();
-
-    Some(uuid)
 }
 
 async fn init_task_scheduler(
@@ -652,7 +538,8 @@ async fn init_task_scheduler(
             task.clone(),
             registration_tx,
             query_registration_tx.subscribe(),
-            jwt_lock.clone(),
+            Backend::MensiMates,
+            Some(jwt_lock.clone()),
         )
         .await;
         loaded_user_data.insert(
@@ -699,7 +586,8 @@ async fn init_task_scheduler(
                     job_handler_task.clone(),
                     registr_tx_loadjob.clone(),
                     query_registration_tx.subscribe(),
-                    jwt_lock.clone(),
+                    Backend::MensiMates,
+                    Some(jwt_lock.clone()),
                 )
                 .await;
 
@@ -755,7 +643,8 @@ async fn init_task_scheduler(
                                 new_job_task.clone(),
                                 registr_tx_loadjob.clone(),
                                 query_registration_tx.subscribe(),
-                                jwt_lock.clone()
+                                Backend::MensiMates,
+                                Some(jwt_lock.clone()),
                             ).await
                         } else {
                             // no new time was set -> return old job uuid

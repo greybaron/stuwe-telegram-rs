@@ -82,19 +82,15 @@ async fn get_mensimates_json(
         .await;
 
     match response {
-        Ok(t) => {
-            match t.status() {
-                reqwest::StatusCode::OK => Ok(t.text().await.unwrap()),
-                _ => {
-                    Err(t.error_for_status().unwrap_err())
-                }
-            }
+        Ok(t) => match t.status() {
+            reqwest::StatusCode::OK => Ok(t.text().await.unwrap()),
+            _ => Err(t.error_for_status().unwrap_err()),
         },
         Err(e) => Err(e),
     }
 }
 
-pub async fn build_meal_message(
+pub async fn mm_b_meal_msg(
     days_forward: i64,
     mensa_location: u8,
     jwt_lock: Arc<RwLock<String>>,
@@ -182,7 +178,7 @@ pub async fn build_meal_message(
                             .map(|x| x.trim())
                             .collect::<Vec<&str>>();
                         for ingr in sub_ingredients {
-                            if *ingr != "N/A" {
+                            if *ingr != "N/A" && !ingr.is_empty() {
                                 msg += &format!("     + {}\n", markdown::italic(ingr));
                             }
                         }
@@ -215,6 +211,7 @@ async fn get_meals(
 
     match mm_json {
         Ok(text) => {
+            println!("JJ\n{}\nJJ", text);
             let day_meal_groups: Vec<MealGroup> = serde_json::from_str(&text).unwrap();
             Ok(day_meal_groups)
         }

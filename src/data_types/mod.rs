@@ -7,6 +7,12 @@ use teloxide::{
 use thiserror::Error;
 use uuid::Uuid;
 
+#[derive(Copy, Clone)]
+pub enum Backend {
+    MensiMates,
+    StuWe,
+}
+
 pub const MENSEN: [(&str, u8); 9] = [
     ("Cafeteria Dittrichring", 153),
     ("Mensaria am Botanischen Garten", 127),
@@ -21,6 +27,7 @@ pub const MENSEN: [(&str, u8); 9] = [
 
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
 pub const MM_DB: &str = "mm_storage.sqlite";
+pub const STUWE_DB: &str = "storage.sqlite";
 
 #[derive(BotCommands, Clone, Debug, PartialEq)]
 #[command(rename_rule = "lowercase")]
