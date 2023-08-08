@@ -4,13 +4,13 @@ use stuwe_telegram_rs::db_operations::{
 };
 use stuwe_telegram_rs::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, make_days_keyboard,
-    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue,
+    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue, logger_init,
 };
 
 use data_backend::stuwe_parser::update_cache;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobType, RegistrationEntry,
-    MENSEN, NO_DB_MSG, STUWE_DB,
+    MENSEN, NO_DB_MSG, STUWE_DB, JobHandlerTaskType, QueryRegistrationType,
 };
 
 use chrono::Timelike;
@@ -35,23 +35,11 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 
 #[tokio::main]
 async fn main() {
-    pretty_env_logger::formatted_timed_builder()
-        .filter_level(log::LevelFilter::Info)
-        .filter_module(
-            "stuwe_telegram_rs",
-            if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).unwrap_or_default()
-                == "debug"
-            {
-                log::LevelFilter::Debug
-            } else {
-                log::LevelFilter::Info
-            },
-        )
-        .init();
+    logger_init(module_path!());
 
-    // pretty_env_logger::
     log::info!("Starting command bot...");
 
+    let bot = Bot::from_env();
     let mensen = BTreeMap::from(MENSEN);
 
     if !log_enabled!(log::Level::Debug) {
@@ -59,15 +47,11 @@ async fn main() {
     }
 
     let (registration_tx, job_rx): (
-        broadcast::Sender<JobHandlerTask>,
-        broadcast::Receiver<JobHandlerTask>,
+        JobHandlerTaskType
     ) = broadcast::channel(10);
-    // let registration_tx_ts = registration_tx.clone();
-
-    let (query_registration_tx, _): (broadcast::Sender<Option<RegistrationEntry>>, _) =
+    
+    let (query_registration_tx, _): QueryRegistrationType =
         broadcast::channel(10);
-
-    let bot = Bot::from_env();
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
     let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();

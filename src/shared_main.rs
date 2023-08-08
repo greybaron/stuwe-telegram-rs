@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, error::Error, sync::Arc, time::Instant, env};
 
 use chrono::Timelike;
 use regex_lite::Regex;
@@ -26,6 +26,22 @@ use crate::{
     },
     db_operations::update_db_row,
 };
+
+pub fn logger_init(module_path: &str) {
+    pretty_env_logger::formatted_timed_builder()
+        .filter_level(log::LevelFilter::Info)
+        .filter_module(
+            module_path,
+            if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).unwrap_or_default()
+                == "debug"
+            {
+                log::LevelFilter::Debug
+            } else {
+                log::LevelFilter::Info
+            },
+        )
+        .init();
+}
 
 pub async fn start_time_dialogue(
     bot: Bot,

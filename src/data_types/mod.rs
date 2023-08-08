@@ -5,6 +5,7 @@ use teloxide::{
     dispatching::dialogue::InMemStorage, prelude::Dialogue, utils::command::BotCommands,
 };
 use thiserror::Error;
+use tokio::sync::broadcast;
 use uuid::Uuid;
 
 #[derive(Copy, Clone)]
@@ -59,6 +60,13 @@ pub enum DialogueState {
 
 pub type DialogueType = Dialogue<DialogueState, InMemStorage<DialogueState>>;
 pub type HandlerResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
+
+pub type JobHandlerTaskType = (
+    broadcast::Sender<JobHandlerTask>,
+    broadcast::Receiver<JobHandlerTask>,
+);
+
+pub type QueryRegistrationType = (broadcast::Sender<Option<RegistrationEntry>>, broadcast::Receiver<Option<RegistrationEntry>>);
 
 // used internally for teloxide/Telegram bot
 #[derive(Debug, Clone)]
