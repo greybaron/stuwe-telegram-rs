@@ -1,16 +1,14 @@
-use stuwe_telegram_rs::data_backend;
-use stuwe_telegram_rs::db_operations::{
-    get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+use stuwe_telegram_rs::data_types::{
+    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
+    QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
 };
 use stuwe_telegram_rs::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
     make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue,
 };
-
-use data_backend::stuwe_parser::update_cache;
-use stuwe_telegram_rs::data_types::{
-    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
+use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
+use stuwe_telegram_rs::db_operations::{
+    get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 
 use chrono::Timelike;
@@ -84,7 +82,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -335,7 +333,6 @@ async fn init_task_scheduler(
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
     // run cache update every 5 minutes
-
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
@@ -438,29 +435,28 @@ async fn init_task_scheduler(
                     ),
                 );
             }
+            // KEEP THIS ONE
             JobType::UpdateRegistration => {
-                if job_handler_task.mensa_id.is_some() {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed Mensa", job_handler_task.chat_id.unwrap());
+                if let Some(mensa) = job_handler_task.mensa_id {
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M.📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed time", job_handler_task.chat_id.unwrap());
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:2}:{:2}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
                 }
 
                 if let Some(previous_registration) =
                     loaded_user_data.get(&job_handler_task.chat_id.unwrap())
                 {
-                    let mensa_id = if job_handler_task.mensa_id.is_some() {
-                        job_handler_task.mensa_id.unwrap()
-                    } else {
-                        previous_registration.1
-                    };
+                    let mensa_id = job_handler_task.mensa_id.unwrap_or(previous_registration.1);
+                    let hour = job_handler_task.hour.or(previous_registration.2);
+                    let minute = job_handler_task.minute.or(previous_registration.3);
 
                     let new_job_task = JobHandlerTask {
                         job_type: JobType::UpdateRegistration,
                         chat_id: job_handler_task.chat_id,
                         mensa_id: Some(mensa_id),
-                        hour: job_handler_task.hour,
-                        minute: job_handler_task.minute,
+                        hour,
+                        minute,
                         callback_id: None,
                     };
 
@@ -486,21 +482,9 @@ async fn init_task_scheduler(
                             previous_registration.0
                         };
 
-                    let previous_callback_id = if previous_registration.4.is_some() {
-                        previous_registration.4
-                    } else {
-                        None
-                    };
-
                     loaded_user_data.insert(
                         job_handler_task.chat_id.unwrap(),
-                        (
-                            new_uuid,
-                            mensa_id,
-                            job_handler_task.hour,
-                            job_handler_task.minute,
-                            previous_callback_id,
-                        ),
+                        (new_uuid, mensa_id, hour, minute, previous_registration.4),
                     );
 
                     // update any values that are to be changed, aka are Some()
@@ -563,6 +547,7 @@ async fn init_task_scheduler(
             JobType::BroadcastUpdate => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
                 for (chat_id, registration_data) in &loaded_user_data {
+                    println!("chat_id: {}\nregist: {:#?}", chat_id, registration_data);
                     let mensa_id = registration_data.1;
 
                     let now = chrono::Local::now();

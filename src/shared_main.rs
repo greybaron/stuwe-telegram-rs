@@ -56,7 +56,15 @@ pub async fn start_time_dialogue(
     registration_tx
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
-    if query_registration_rx.recv().await.unwrap().is_some() {
+    let qr_reg = query_registration_rx.recv().await.unwrap();
+    // if query_registration_rx.recv().await.unwrap().is_some() {
+    if let Some(regist) = qr_reg {
+        log::error!(
+            "REG: {}:{} &{}",
+            regist.2.unwrap_or_default(),
+            regist.3.unwrap_or_default(),
+            regist.1
+        );
         let argument = msg.text().unwrap_or_default().split(' ').nth(1);
         let parsed_opt = if argument.is_some() {
             Some(parse_time(argument.unwrap()))
@@ -344,7 +352,7 @@ pub async fn callback_handler(
                         jwt_lock,
                     )
                     .await;
-                    println!("about to send:\n\n{}", text);
+
                     let keyboard = make_days_keyboard();
                     bot.send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)

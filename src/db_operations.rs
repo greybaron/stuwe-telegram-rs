@@ -110,7 +110,7 @@ pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
     let job_iter = stmt
         .query_map([], |row| {
             Ok(JobHandlerTask {
-                job_type: JobType::UpdateRegistration,
+                job_type: JobType::QueryRegistration,
                 chat_id: row.get(0)?,
                 mensa_id: row.get(1)?,
                 hour: row.get(2)?,

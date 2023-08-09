@@ -92,26 +92,6 @@ pub struct JobHandlerTask {
     pub callback_id: Option<i32>,
 }
 
-// // versions for mensimates (no meal update checking and broadcasting implemented)
-// #[derive(Debug, Clone)]
-// pub enum MMJobType {
-//     Register,
-//     Unregister,
-//     QueryRegistration,
-//     UpdateRegistration,
-//     InsertCallbackMessageId,
-// }
-
-// #[derive(Debug, Clone)]
-// pub struct MMJobHandlerTask {
-//     pub job_type: MMJobType,
-//     pub chat_id: Option<i64>,
-//     pub mensa_id: Option<u8>,
-//     pub hour: Option<u32>,
-//     pub minute: Option<u32>,
-//     pub callback_id: Option<i32>,
-// }
-
 // opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
 pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<i32>);
 

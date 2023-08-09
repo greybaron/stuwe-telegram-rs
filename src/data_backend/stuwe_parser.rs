@@ -213,7 +213,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
         }
     }
 
-    log::debug!("HTML → Data: {:.2?}", now.elapsed());
+    log::debug!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
     MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
