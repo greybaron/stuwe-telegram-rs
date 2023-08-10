@@ -1,8 +1,6 @@
 use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant};
 
 use chrono::Timelike;
-use regex_lite::Regex;
-use static_init::dynamic;
 use teloxide::{
     prelude::*,
     utils::{command::BotCommands, markdown},
@@ -20,10 +18,7 @@ use crate::{
     data_types::{Backend, Command, NO_DB_MSG},
 };
 use crate::{
-    data_types::{
-        DialogueState, DialogueType, HandlerResult, JobHandlerTask, JobType, RegistrationEntry,
-        TimeParseError,
-    },
+    data_types::{JobHandlerTask, JobType, RegistrationEntry},
     db_operations::update_db_row,
 };
 
@@ -43,133 +38,6 @@ pub fn logger_init(module_path: &str) {
         .init();
 }
 
-pub async fn start_time_dialogue(
-    bot: Bot,
-    msg: Message,
-    dialogue: DialogueType,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    let qr_reg = query_registration_rx.recv().await.unwrap();
-    // if query_registration_rx.recv().await.unwrap().is_some() {
-    if let Some(regist) = qr_reg {
-        log::error!(
-            "REG: {}:{} &{}",
-            regist.2.unwrap_or_default(),
-            regist.3.unwrap_or_default(),
-            regist.1
-        );
-        let argument = msg.text().unwrap_or_default().split(' ').nth(1);
-        let parsed_opt = if argument.is_some() {
-            Some(parse_time(argument.unwrap()))
-        } else {
-            None
-        };
-
-        if parsed_opt.is_some() && parsed_opt.as_ref().unwrap().is_ok() {
-            let (hour, minute) = parsed_opt.unwrap().unwrap();
-            bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-            dialogue.exit().await.unwrap();
-
-            let registration_job = JobHandlerTask {
-                job_type: JobType::UpdateRegistration,
-                chat_id: Some(msg.chat.id.0),
-                mensa_id: None,
-                hour: Some(hour),
-                minute: Some(minute),
-                callback_id: None,
-            };
-            registration_tx.send(registration_job).unwrap();
-        } else {
-            bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
-                .await
-                .unwrap();
-            dialogue
-                .update(DialogueState::AwaitTimeReply)
-                .await
-                .unwrap();
-        };
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await.unwrap();
-        dialogue.exit().await.unwrap();
-    }
-    Ok(())
-}
-
-pub async fn process_time_reply(
-    bot: Bot,
-    msg: Message,
-    dialogue: DialogueType,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if query_registration_rx.recv().await.unwrap().is_some() {
-        if let Some(txt) = msg.text() {
-            match parse_time(txt) {
-                Ok((hour, minute)) => {
-                    bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-                    dialogue.exit().await.unwrap();
-
-                    let registration_job = JobHandlerTask {
-                        job_type: JobType::UpdateRegistration,
-                        chat_id: Some(msg.chat.id.0),
-                        mensa_id: None,
-                        hour: Some(hour),
-                        minute: Some(minute),
-                        callback_id: None,
-                    };
-                    registration_tx.send(registration_job).unwrap();
-                }
-                Err(TimeParseError::InvalidTimePassed) => {
-                    bot.send_message(
-                        msg.chat.id,
-                        "Eingegebene Zeit ist ungültig.\nBitte mit Uhrzeit antworten:",
-                    )
-                    .await?;
-                }
-            }
-        } else {
-            bot.send_message(
-                msg.chat.id,
-                "Das ist kein Text.\nBitte mit Uhrzeit antworten:",
-            )
-            .await?;
-        };
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await?;
-        dialogue.exit().await.unwrap();
-    }
-
-    Ok(())
-}
-
-fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
-    #[dynamic]
-    static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
-    if !RE.is_match(txt) {
-        Err(TimeParseError::InvalidTimePassed)
-    } else {
-        let caps = RE.captures(txt).unwrap();
-
-        let hour = caps.get(1).unwrap().as_str().parse::<u32>().unwrap();
-        let minute = caps.get(2).unwrap().as_str().parse::<u32>().unwrap();
-
-        Ok((hour, minute))
-    }
-}
-
 pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
     JobHandlerTask {
         job_type: JobType::QueryRegistration,
@@ -185,20 +53,26 @@ pub fn make_mensa_keyboard(
     mensen: BTreeMap<&str, u8>,
     only_mensa_upd: bool,
 ) -> InlineKeyboardMarkup {
+    // let subscribed_ids = [140, 108];
     let mut keyboard = Vec::new();
 
     for mensa in mensen {
-        if only_mensa_upd {
-            keyboard.push([InlineKeyboardButton::callback(
-                mensa.0,
-                format!("m_upd:{}", mensa.0),
-            )]);
-        } else {
-            keyboard.push([InlineKeyboardButton::callback(
-                mensa.0,
-                format!("m_regist:{}", mensa.0),
-            )]);
-        }
+        // let button_text = format!("{} {}", subscribed_ids.contains(&mensa.1), mensa.0);
+        // if only_mensa_upd {
+        //     keyboard.push([InlineKeyboardButton::callback(
+        //         button_text,
+        //         format!("m_upd:{}", mensa.0),
+        //     )]);
+        // } else {
+        keyboard.push([InlineKeyboardButton::callback(
+            mensa.0,
+            format!(
+                "m_{}:{}",
+                if only_mensa_upd { "upd" } else { "regist" },
+                mensa.0
+            ),
+        )]);
+        // }
     }
     InlineKeyboardMarkup::new(keyboard)
 }

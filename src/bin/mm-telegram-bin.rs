@@ -1,4 +1,6 @@
-use stuwe_telegram_rs::bot_command_handlers::day_cmd;
+use stuwe_telegram_rs::bot_command_handlers::{
+    change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
+};
 use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
@@ -7,10 +9,7 @@ use stuwe_telegram_rs::data_types::{
 use stuwe_telegram_rs::db_operations::{
     get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
-use stuwe_telegram_rs::shared_main::{
-    callback_handler, load_job, logger_init, make_mensa_keyboard, make_query_data,
-    process_time_reply, start_time_dialogue,
-};
+use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
 
 use log::log_enabled;
 use std::{
@@ -23,7 +22,6 @@ use teloxide::{
         dialogue::{self, InMemStorage},
         UpdateHandler,
     },
-    // types::{MessageId, ParseMode},
     prelude::*,
 };
 use tokio::sync::{broadcast, RwLock};
@@ -111,129 +109,6 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
     dialogue::enter::<Update, InMemStorage<DialogueState>, DialogueState, _>()
         .branch(message_handler)
         .branch(callback_query_handler)
-}
-
-async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
-    let keyboard = make_mensa_keyboard(mensen, false);
-    bot.send_message(msg.chat.id, "Mensa auswählen:")
-        .reply_markup(keyboard)
-        .await?;
-    Ok(())
-}
-
-async fn subscribe(
-    bot: Bot,
-    msg: Message,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-        registration_tx
-            .send(make_query_data(msg.chat.id.0))
-            .unwrap();
-        let uuid = registration.0; //.unwrap().expect("try to operate on non-existing registration");
-
-        if uuid.is_some() {
-            bot.send_message(
-                msg.chat.id,
-                "Automatische Nachrichten sind schon aktiviert.",
-            )
-            .await?;
-        } else {
-            bot.send_message(
-                        msg.chat.id,
-                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /uhrzeit",
-                    )
-                    .await?;
-
-            let registration_job = JobHandlerTask {
-                job_type: JobType::UpdateRegistration,
-                chat_id: Some(msg.chat.id.0),
-                mensa_id: None,
-                hour: Some(6),
-                minute: Some(0),
-                callback_id: None,
-            };
-
-            registration_tx.send(registration_job).unwrap();
-        }
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await?;
-    }
-
-    Ok(())
-}
-
-async fn unsubscribe(
-    bot: Bot,
-    msg: Message,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-        let uuid = registration.0;
-
-        if uuid.is_none() {
-            bot.send_message(
-                msg.chat.id,
-                "Automatische Nachrichten waren bereits deaktiviert.",
-            )
-            .await?;
-        } else {
-            bot.send_message(msg.chat.id, "Plan wird nicht mehr automatisch gesendet.")
-                .await?;
-
-            registration_tx
-                .send(JobHandlerTask {
-                    job_type: JobType::Unregister,
-                    chat_id: Some(msg.chat.id.0),
-                    mensa_id: None,
-                    hour: None,
-                    minute: None,
-                    callback_id: None,
-                })
-                .unwrap();
-        }
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await?;
-    }
-    Ok(())
-}
-
-async fn change_mensa(
-    bot: Bot,
-    msg: Message,
-    mensen: BTreeMap<&str, u8>,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if query_registration_rx.recv().await.unwrap().is_some() {
-        let keyboard = make_mensa_keyboard(mensen, true);
-        bot.send_message(msg.chat.id, "Mensa auswählen:")
-            .reply_markup(keyboard)
-            .await?;
-    } else {
-        bot.send_message(msg.chat.id, no_db_message).await?;
-    }
-    Ok(())
 }
 
 async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
