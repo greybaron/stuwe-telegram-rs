@@ -22,7 +22,7 @@ use crate::{
 use crate::{
     data_types::{
         DialogueState, DialogueType, HandlerResult, JobHandlerTask, JobType, RegistrationEntry,
-        TimeParseError, MM_DB, STUWE_DB,
+        TimeParseError,
     },
     db_operations::update_db_row,
 };
@@ -187,7 +187,6 @@ pub fn make_mensa_keyboard(
 ) -> InlineKeyboardMarkup {
     let mut keyboard = Vec::new();
 
-    // shitty
     for mensa in mensen {
         if only_mensa_upd {
             keyboard.push([InlineKeyboardButton::callback(
@@ -204,7 +203,17 @@ pub fn make_mensa_keyboard(
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub fn make_days_keyboard() -> InlineKeyboardMarkup {
+pub async fn make_days_keyboard(
+    bot: &Bot,
+    chat_id: i64,
+    previous_markup_id: Option<i32>,
+) -> InlineKeyboardMarkup {
+    if let Some(id) = previous_markup_id {
+        _ = bot
+            .edit_message_reply_markup(ChatId(chat_id), MessageId(id))
+            .await;
+    };
+
     let keyboard = vec![vec![
         InlineKeyboardButton::callback("Heute", "day:0"),
         InlineKeyboardButton::callback("Morgen", "day:1"),
@@ -263,8 +272,14 @@ pub async fn load_job(
             let mut query_registration_rx = query_registration_rx.resubscribe();
 
             Box::pin(async move {
-                let keyboard = make_days_keyboard();
-                let msg = bot
+                registration_tx
+                    .send(make_query_data(task.chat_id.unwrap()))
+                    .unwrap();
+                let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+
+                let keyboard =
+                    make_days_keyboard(&bot, task.chat_id.unwrap(), previous_markup_id).await;
+                let markup_id = bot
                     .send_message(
                         ChatId(task.chat_id.unwrap()),
                         build_meal_message_dispatcher(backend, 0, task.mensa_id.unwrap(), jwt_lock)
@@ -273,37 +288,21 @@ pub async fn load_job(
                     .parse_mode(ParseMode::MarkdownV2)
                     .reply_markup(keyboard)
                     .await
-                    .unwrap();
-
-                registration_tx
-                    .send(make_query_data(task.chat_id.unwrap()))
-                    .unwrap();
-
-                let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-                if let Some(callback_id) = prev_reg.4 {
-                    _ = bot
-                        .edit_message_reply_markup(
-                            ChatId(task.chat_id.unwrap()),
-                            MessageId(callback_id),
-                        )
-                        .await;
-                };
+                    .unwrap()
+                    .id
+                    .0;
 
                 // send message callback id to store
                 let task = JobHandlerTask {
-                    job_type: JobType::InsertCallbackMessageId,
+                    job_type: JobType::InsertMarkupMessageID,
                     chat_id: Some(task.chat_id.unwrap()),
                     mensa_id: None,
                     hour: None,
                     minute: None,
-                    callback_id: Some(msg.id.0),
-                };
-                let sql_filename = match backend {
-                    Backend::MensiMates => MM_DB,
-                    Backend::StuWe => STUWE_DB,
+                    callback_id: Some(markup_id),
                 };
 
-                update_db_row(&task, sql_filename).unwrap();
+                update_db_row(&task, backend).unwrap();
                 registration_tx.send(task).unwrap();
             })
         },
@@ -353,11 +352,17 @@ pub async fn callback_handler(
                     )
                     .await;
 
-                    let keyboard = make_days_keyboard();
-                    bot.send_message(chat.id, text)
+                    registration_tx.send(make_query_data(chat.id.0)).unwrap();
+                    let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+
+                    let keyboard = make_days_keyboard(&bot, chat.id.0, previous_markup_id).await;
+                    let markup_id = bot
+                        .send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .reply_markup(keyboard)
-                        .await?;
+                        .await?
+                        .id
+                        .0;
 
                     let task = JobHandlerTask {
                         job_type: JobType::UpdateRegistration,
@@ -365,8 +370,10 @@ pub async fn callback_handler(
                         mensa_id: Some(*mensen.get(arg).unwrap()),
                         hour: None,
                         minute: None,
-                        callback_id: None,
+                        callback_id: Some(markup_id),
                     };
+
+                    update_db_row(&task, backend).unwrap();
                     registration_tx.send(task).unwrap();
                 }
                 "m_regist" => {
@@ -390,11 +397,17 @@ pub async fn callback_handler(
                     )
                     .await;
 
-                    let keyboard = make_days_keyboard();
-                    bot.send_message(chat.id, text)
+                    registration_tx.send(make_query_data(chat.id.0)).unwrap();
+                    let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+
+                    let keyboard = make_days_keyboard(&bot, chat.id.0, previous_markup_id).await;
+                    let markup_id = bot
+                        .send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
                         .reply_markup(keyboard)
-                        .await?;
+                        .await?
+                        .id
+                        .0;
 
                     let task = JobHandlerTask {
                         job_type: JobType::Register,
@@ -402,24 +415,16 @@ pub async fn callback_handler(
                         mensa_id: Some(*mensen.get(arg).unwrap()),
                         hour: Some(6),
                         minute: Some(0),
-                        callback_id: None,
+                        callback_id: Some(markup_id),
                     };
+
+                    update_db_row(&task, backend).unwrap();
                     registration_tx.send(task).unwrap();
                 }
                 "day" => {
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
                     let prev_reg_opt = query_registration_rx.recv().await.unwrap();
                     if let Some(prev_registration) = prev_reg_opt {
-                        if let Some(callback_id) = prev_registration.4 {
-                            // also try to edit callback
-                            _ = bot
-                                .edit_message_reply_markup(chat.id, MessageId(callback_id))
-                                .await;
-                        }
-
-                        // also try to remove answered query anyway, as a fallback (the more the merrier)
-                        _ = bot.edit_message_reply_markup(chat.id, id).await;
-
                         // start building message
                         let now = Instant::now();
 
@@ -437,28 +442,35 @@ pub async fn callback_handler(
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
-                        let keyboard = make_days_keyboard();
-                        let msg = bot
+                        registration_tx.send(make_query_data(chat.id.0)).unwrap();
+                        let previous_markup_id =
+                            query_registration_rx.recv().await.unwrap().unwrap().4;
+
+                        let keyboard =
+                            make_days_keyboard(&bot, chat.id.0, previous_markup_id).await;
+                        let markup_id = bot
                             .send_message(chat.id, text)
                             .parse_mode(ParseMode::MarkdownV2)
                             .reply_markup(keyboard)
-                            .await?;
+                            .await?
+                            .id
+                            .0;
                         log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
 
                         let task = JobHandlerTask {
-                            job_type: JobType::InsertCallbackMessageId,
+                            job_type: JobType::InsertMarkupMessageID,
                             chat_id: Some(chat.id.0),
                             mensa_id: None,
                             hour: None,
                             minute: None,
-                            callback_id: Some(msg.id.0),
+                            callback_id: Some(markup_id),
                         };
-                        let sql_filename = match backend {
-                            Backend::MensiMates => MM_DB,
-                            Backend::StuWe => STUWE_DB,
-                        };
-                        update_db_row(&task, sql_filename).unwrap();
+
+                        update_db_row(&task, backend).unwrap();
                         registration_tx.send(task).unwrap();
+
+                        // also try to remove answered query anyway, as a fallback (the more the merrier)
+                        _ = bot.edit_message_reply_markup(chat.id, id).await;
                     } else {
                         bot.send_message(chat.id, NO_DB_MSG).await?;
                     }

@@ -1,5 +1,6 @@
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
+use crate::data_types::STUWE_DB;
 
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
@@ -221,7 +222,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
 }
 
 async fn save_meal_to_db(url_params: &str, json_text: &str) {
-    let conn = Connection::open("storage.sqlite").unwrap();
+    let conn = Connection::open(STUWE_DB).unwrap();
     let mut stmt = conn
         .prepare_cached(
             "replace into meals (mensa_and_date, json_text)
@@ -233,7 +234,7 @@ async fn save_meal_to_db(url_params: &str, json_text: &str) {
 }
 
 async fn get_meal_from_db(url_params: &str) -> Option<String> {
-    let conn = Connection::open("storage.sqlite").unwrap();
+    let conn = Connection::open(STUWE_DB).unwrap();
     let mut stmt = conn
         .prepare_cached("select json_text from meals where mensa_and_date = (?1)")
         .unwrap();

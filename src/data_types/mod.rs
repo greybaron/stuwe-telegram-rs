@@ -27,8 +27,8 @@ pub const MENSEN: [(&str, u8); 9] = [
 ];
 
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
-pub const MM_DB: &str = "mm_storage.sqlite";
-pub const STUWE_DB: &str = "storage.sqlite";
+pub const MM_DB: &str = "mensimates.sqlite";
+pub const STUWE_DB: &str = "stuwe.sqlite";
 
 #[derive(BotCommands, Clone, Debug, PartialEq)]
 #[command(rename_rule = "lowercase")]
@@ -79,7 +79,7 @@ pub enum JobType {
     QueryRegistration,
     UpdateRegistration,
     BroadcastUpdate,
-    InsertCallbackMessageId,
+    InsertMarkupMessageID,
 }
 
 #[derive(Debug, Clone)]

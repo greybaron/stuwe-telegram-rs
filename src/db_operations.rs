@@ -1,8 +1,12 @@
 use rusqlite::{params, Connection};
 
-use crate::data_types::{JobHandlerTask, JobType};
+use crate::data_types::{Backend, JobHandlerTask, JobType, MM_DB, STUWE_DB};
 
-pub fn update_db_row(data: &JobHandlerTask, sql_filename: &str) -> rusqlite::Result<()> {
+pub fn update_db_row(data: &JobHandlerTask, backend: Backend) -> rusqlite::Result<()> {
+    let sql_filename = match backend {
+        Backend::MensiMates => MM_DB,
+        Backend::StuWe => STUWE_DB,
+    };
     let conn = Connection::open(sql_filename)?;
 
     // could be better but eh

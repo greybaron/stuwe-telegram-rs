@@ -1,14 +1,15 @@
+use stuwe_telegram_rs::bot_command_handlers::day_cmd;
+use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry, MENSEN, MM_DB, NO_DB_MSG,
 };
-use stuwe_telegram_rs::shared_main::{
-    build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
-    make_mensa_keyboard, make_query_data, process_time_reply, start_time_dialogue,
-};
-use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
 use stuwe_telegram_rs::db_operations::{
     get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+};
+use stuwe_telegram_rs::shared_main::{
+    callback_handler, load_job, logger_init, make_mensa_keyboard, make_query_data,
+    process_time_reply, start_time_dialogue,
 };
 
 use log::log_enabled;
@@ -22,8 +23,8 @@ use teloxide::{
         dialogue::{self, InMemStorage},
         UpdateHandler,
     },
+    // types::{MessageId, ParseMode},
     prelude::*,
-    types::{MessageId, ParseMode},
 };
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
@@ -76,13 +77,12 @@ async fn main() {
         mensen,
         registration_tx,
         query_registration_tx,
-        NO_DB_MSG,
         Backend::MensiMates,
         Some(jwt_lock)
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -118,84 +118,6 @@ async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerRes
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
         .await?;
-    Ok(())
-}
-
-async fn day_cmd(
-    bot: Bot,
-    msg: Message,
-    cmd: Command,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_lock: Option<Arc<RwLock<String>>>,
-    no_db_message: &str,
-) -> HandlerResult {
-    let mut query_registration_rx = query_registration_tx.subscribe();
-
-    let days_forward = match cmd {
-        Command::Heute => 0,
-        Command::Morgen => 1,
-        Command::Uebermorgen => 2,
-        _ => panic!(),
-    };
-
-    let now = Instant::now();
-    registration_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-
-    if let Some(registration) = query_registration_rx.recv().await.unwrap() {
-        if let Some(callback_id) = registration.4 {
-            _ = bot
-                .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
-                .await;
-        }
-        let text = build_meal_message_dispatcher(
-            Backend::MensiMates,
-            days_forward,
-            registration.1,
-            jwt_lock,
-        )
-        .await;
-        log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
-        let now = Instant::now();
-
-        let keyboard = make_days_keyboard();
-        bot.send_message(msg.chat.id, text)
-            .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(keyboard)
-            .await?;
-
-        log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
-
-        registration_tx
-            .send(make_query_data(msg.chat.id.0))
-            .unwrap();
-        let prev_reg = query_registration_rx.recv().await.unwrap().unwrap();
-        if let Some(callback_id) = prev_reg.4 {
-            _ = bot
-                .edit_message_reply_markup(msg.chat.id, MessageId(callback_id))
-                .await;
-        }
-
-        // send message callback id to store
-        let task = JobHandlerTask {
-            job_type: JobType::InsertCallbackMessageId,
-            chat_id: Some(msg.chat.id.0),
-            mensa_id: None,
-            hour: None,
-            minute: None,
-            callback_id: Some(msg.id.0),
-        };
-        update_db_row(&task, MM_DB).unwrap();
-        registration_tx.send(task).unwrap();
-    } else {
-        // every user has a registration (starting the chat always calls /start)
-        // if this is none, it most likely means the DB was wiped)
-        // forcing reregistration is better than crashing the bot, no data will be overwritten anyways
-        // but copy pasting this everywhere is ugly
-        bot.send_message(msg.chat.id, no_db_message).await?;
-    }
     Ok(())
 }
 
@@ -328,6 +250,7 @@ async fn init_task_scheduler(
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
     jwt_lock: Arc<RwLock<String>>,
 ) {
+    let backend = Backend::MensiMates;
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db(MM_DB);
     let sched = JobScheduler::new().await.unwrap();
@@ -435,7 +358,7 @@ async fn init_task_scheduler(
             }
             JobType::UpdateRegistration => {
                 if let Some(mensa) = job_handler_task.mensa_id {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M.📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
                     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:2}:{:2}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
@@ -485,7 +408,7 @@ async fn init_task_scheduler(
                     );
 
                     // update any values that are to be changed, aka are Some()
-                    update_db_row(&job_handler_task, MM_DB).unwrap();
+                    update_db_row(&job_handler_task, backend).unwrap();
                 } else {
                     log::error!("Tried to update non-existent job");
                     bot.send_message(ChatId(job_handler_task.chat_id.unwrap()), NO_DB_MSG)
@@ -541,7 +464,7 @@ async fn init_task_scheduler(
                 query_registration_tx.send(uuid_opt.copied()).unwrap();
             }
 
-            JobType::InsertCallbackMessageId => {
+            JobType::InsertMarkupMessageID => {
                 let mut regist = *loaded_user_data
                     .get(&job_handler_task.chat_id.unwrap())
                     .unwrap();
