@@ -8,7 +8,7 @@ use crate::data_types::{
 use crate::db_operations::{get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row};
 use crate::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
-    make_mensa_keyboard, make_query_data,
+    make_mensa_keyboards, make_query_data,
 };
 
 use log::log_enabled;
@@ -31,10 +31,17 @@ use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
-    let keyboard = make_mensa_keyboard(mensen, false);
-    bot.send_message(msg.chat.id, "Mensa auswählen:")
-        .reply_markup(keyboard)
-        .await?;
+    let (enabled_keyboard, disabled_keyboard) = make_mensa_keyboards(mensen, false);
+    bot.send_message(msg.chat.id, "Gewählte Mensen:")
+            .reply_markup(enabled_keyboard)
+            // .text("test hilfe")
+            // .reply_markup(disabled_keyboard)
+            .await?;
+            
+
+            // bot.send_message(msg.chat.id, "nicht gewählte Mensen:")
+            // .reply_markup(disabled_keyboard)
+            // .await?;
     Ok(())
 }
 
@@ -209,10 +216,21 @@ pub async fn change_mensa(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
     if query_registration_rx.recv().await.unwrap().is_some() {
-        let keyboard = make_mensa_keyboard(mensen, true);
-        bot.send_message(msg.chat.id, "Mensa auswählen:")
-            .reply_markup(keyboard)
+        let (enabled_keyboard, disabled_keyboard) = make_mensa_keyboards(mensen, true);
+        
+        if !enabled_keyboard.inline_keyboard.is_empty() {
+            bot.send_message(msg.chat.id, "Gewählte Mensen:")
+            .reply_markup(enabled_keyboard)
             .await?;
+        }
+        if !disabled_keyboard.inline_keyboard.is_empty() {
+            bot.send_message(msg.chat.id, "nicht gewählte Mensen:")
+            .reply_markup(disabled_keyboard)
+            .await?;
+        }
+       
+
+            
     } else {
         bot.send_message(msg.chat.id, NO_DB_MSG).await?;
     }

@@ -49,22 +49,27 @@ pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
     }
 }
 
-pub fn make_mensa_keyboard(
+pub fn make_mensa_keyboards(
     mensen: BTreeMap<&str, u8>,
     only_mensa_upd: bool,
-) -> InlineKeyboardMarkup {
-    // let subscribed_ids = [140, 108];
-    let mut keyboard = Vec::new();
+) -> (InlineKeyboardMarkup, InlineKeyboardMarkup) {
+    let subscribed_ids = vec![140];
+    let mut enabled_keyboard = Vec::new();
+    let mut disabled_keyboard = Vec::new();
 
-    for mensa in mensen {
-        // let button_text = format!("{} {}", subscribed_ids.contains(&mensa.1), mensa.0);
-        // if only_mensa_upd {
-        //     keyboard.push([InlineKeyboardButton::callback(
-        //         button_text,
-        //         format!("m_upd:{}", mensa.0),
-        //     )]);
-        // } else {
-        keyboard.push([InlineKeyboardButton::callback(
+    let mut on_mensen = vec![];
+    let mut off_mensen = vec![];
+
+    for mensa_id in mensen {
+        if subscribed_ids.contains(&mensa_id.1) {
+            on_mensen.push(mensa_id);
+        } else {
+            off_mensen.push(mensa_id);
+        }
+    }
+
+    for mensa in on_mensen {
+        enabled_keyboard.push([InlineKeyboardButton::callback(
             mensa.0,
             format!(
                 "m_{}:{}",
@@ -72,9 +77,49 @@ pub fn make_mensa_keyboard(
                 mensa.0
             ),
         )]);
-        // }
     }
-    InlineKeyboardMarkup::new(keyboard)
+    disabled_keyboard.push([InlineKeyboardButton::callback(
+        "Bruh",
+        format!("m_{}:{}", "upd", "Bruh"),
+    ), InlineKeyboardButton::callback(
+        "Bruh",
+        format!("m_{}:{}", "upd", "Bruh"),
+    )]);
+    
+    for mensa in off_mensen {
+        disabled_keyboard.push([InlineKeyboardButton::callback(
+            mensa.0,
+            format!(
+                "m_{}:{}",
+                if only_mensa_upd { "upd" } else { "regist" },
+                mensa.0
+            ),
+        )]);
+    }
+    
+
+    // for mensa in mensen {
+    //     // let button_text = format!("{} {}", subscribed_ids.contains(&mensa.1), mensa.0);
+    //     // if only_mensa_upd {
+    //     //     keyboard.push([InlineKeyboardButton::callback(
+    //     //         button_text,
+    //     //         format!("m_upd:{}", mensa.0),
+    //     //     )]);
+    //     // } else {
+    //     keyboard.push([InlineKeyboardButton::callback(
+    //         format!("{} {}", if subscribed_ids.contains(&mensa.1) {"🟢"} else {"🔴"}, mensa.0),
+    //         format!(
+    //             "m_{}:{}",
+    //             if only_mensa_upd { "upd" } else { "regist" },
+    //             mensa.0
+    //         ),
+    //     )]);
+    //     // }
+    // }
+    (
+        InlineKeyboardMarkup::new(enabled_keyboard),
+        InlineKeyboardMarkup::new(disabled_keyboard),
+    )
 }
 
 pub async fn make_days_keyboard(
