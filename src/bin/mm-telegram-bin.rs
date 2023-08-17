@@ -333,7 +333,7 @@ async fn init_task_scheduler(
                 // check if uuid exists
                 let uuid_opt = loaded_user_data.get(&job_handler_task.chat_id.unwrap());
                 if uuid_opt.is_none() {
-                    log::error!(target: "stuwe_telegram_rs::TS::Jobs", "chat_id {} sent a command, but is not in DB", &job_handler_task.chat_id.unwrap());
+                    log::warn!(target: "stuwe_telegram_rs::TS::QueryReg", "chat_id {} has no registration", &job_handler_task.chat_id.unwrap());
                 }
 
                 query_registration_tx.send(uuid_opt.copied()).unwrap();

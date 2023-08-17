@@ -272,7 +272,8 @@ pub async fn callback_handler(
                     .await;
 
                     registration_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+                    let previous_registration = query_registration_rx.recv().await.unwrap();
+                    let previous_markup_id = if previous_registration.is_none() {None} else {previous_registration.unwrap().4};
 
                     let keyboard = make_days_keyboard(&bot, chat.id.0, previous_markup_id).await;
                     let markup_id = bot
