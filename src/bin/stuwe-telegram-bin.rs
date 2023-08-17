@@ -82,7 +82,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        // .enable_ctrlc_handler()
+        .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
