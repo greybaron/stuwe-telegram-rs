@@ -371,24 +371,21 @@ async fn init_task_scheduler(
                             let text = format!(
                                 "{}\n{}",
                                 &markdown::bold(&markdown::underline("Planänderung:")),
-                                build_meal_message_dispatcher(
-                                    Backend::StuWe,
-                                    0,
-                                    mensa_id,
-                                    None
-                                )
-                                .await
+                                build_meal_message_dispatcher(Backend::StuWe, 0, mensa_id, None)
+                                    .await
                             );
 
                             let previous_markup_id = registration_data.4;
-                            let keyboard = make_days_keyboard(&bot, *chat_id, previous_markup_id).await;
+                            let keyboard =
+                                make_days_keyboard(&bot, *chat_id, previous_markup_id).await;
                             let markup_id = bot
-                            .send_message(ChatId(*chat_id), text)
-                            .parse_mode(ParseMode::MarkdownV2)
-                            .reply_markup(keyboard)
-                            .await.unwrap()
-                            .id
-                            .0;
+                                .send_message(ChatId(*chat_id), text)
+                                .parse_mode(ParseMode::MarkdownV2)
+                                .reply_markup(keyboard)
+                                .await
+                                .unwrap()
+                                .id
+                                .0;
 
                             let task = JobHandlerTask {
                                 job_type: JobType::InsertMarkupMessageID,
