@@ -108,10 +108,11 @@ pub async fn day_cmd(
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
-        registration_tx
-            .send(make_query_data(msg.chat.id.0))
-            .unwrap();
-        let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+        // registration_tx
+        //     .send(make_query_data(msg.chat.id.0))
+        //     .unwrap();
+        // let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
+        let previous_markup_id = registration.4;
 
         let keyboard = make_days_keyboard(&bot, msg.chat.id.0, previous_markup_id).await;
         let markup_id = bot
@@ -235,7 +236,7 @@ pub async fn start_time_dialogue(
     // if query_registration_rx.recv().await.unwrap().is_some() {
     if let Some(regist) = qr_reg {
         log::error!(
-            "REG: {}:{} &{}",
+            "REG: {:02}:{:02} 📌{}",
             regist.2.unwrap_or_default(),
             regist.3.unwrap_or_default(),
             regist.1

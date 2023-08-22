@@ -10,7 +10,7 @@ use stuwe_telegram_rs::db_operations::{
     get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
-    build_meal_message_dispatcher, callback_handler, load_job, logger_init,
+    build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
 };
 
 use chrono::Timelike;
@@ -139,10 +139,11 @@ async fn init_task_scheduler(
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
 
     // run cache update every 5 minutes
+    let registration_tx_istg = registration_tx.clone();
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
-        let registration_tx = registration_tx.clone();
+        let registration_tx = registration_tx_istg.clone();
 
         let mensen_ids = mensen_ids.clone();
         Box::pin(async move {
@@ -367,32 +368,39 @@ async fn init_task_scheduler(
                         {
                             log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
 
-                            // // // // // delete old callback buttons (heute/morgen/ueb)
-                            // // // // if let Some(callback_id) = registration_data.4 {
-                            // // // //     _ = bot
-                            // // // //         .edit_message_reply_markup(
-                            // // // //             ChatId(*chat_id),
-                            // // // //             MessageId(callback_id),
-                            // // // //         )
-                            // // // //         .await;
-                            // // // // };
-                            bot.send_message(
-                                ChatId(*chat_id),
-                                format!(
-                                    "{}\n{}",
-                                    &markdown::bold(&markdown::underline("Planänderung:")),
-                                    build_meal_message_dispatcher(
-                                        Backend::StuWe,
-                                        0,
-                                        mensa_id,
-                                        None
-                                    )
-                                    .await
-                                ),
-                            )
+                            let text = format!(
+                                "{}\n{}",
+                                &markdown::bold(&markdown::underline("Planänderung:")),
+                                build_meal_message_dispatcher(
+                                    Backend::StuWe,
+                                    0,
+                                    mensa_id,
+                                    None
+                                )
+                                .await
+                            );
+
+                            let previous_markup_id = registration_data.4;
+                            let keyboard = make_days_keyboard(&bot, *chat_id, previous_markup_id).await;
+                            let markup_id = bot
+                            .send_message(ChatId(*chat_id), text)
                             .parse_mode(ParseMode::MarkdownV2)
-                            .await
-                            .unwrap();
+                            .reply_markup(keyboard)
+                            .await.unwrap()
+                            .id
+                            .0;
+
+                            let task = JobHandlerTask {
+                                job_type: JobType::InsertMarkupMessageID,
+                                chat_id: Some(*chat_id),
+                                mensa_id: None,
+                                hour: None,
+                                minute: None,
+                                callback_id: Some(markup_id),
+                            };
+
+                            update_db_row(&task, backend).unwrap();
+                            registration_tx.send(task).unwrap();
                         }
                     }
                 }
