@@ -242,11 +242,7 @@ pub async fn start_time_dialogue(
             regist.1
         );
         let argument = msg.text().unwrap_or_default().split(' ').nth(1);
-        let parsed_opt = if argument.is_some() {
-            Some(parse_time(argument.unwrap()))
-        } else {
-            None
-        };
+        let parsed_opt = argument.map(parse_time);
 
         if parsed_opt.is_some() && parsed_opt.as_ref().unwrap().is_ok() {
             let (hour, minute) = parsed_opt.unwrap().unwrap();

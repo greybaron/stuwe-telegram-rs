@@ -236,7 +236,7 @@ async fn init_task_scheduler(
                     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:2}:{:2}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
                 }
 
                 if let Some(previous_registration) =

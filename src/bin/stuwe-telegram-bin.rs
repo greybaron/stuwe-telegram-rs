@@ -248,7 +248,7 @@ async fn init_task_scheduler(
                     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:2}:{:2}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
                 }
 
                 if let Some(previous_registration) =
@@ -361,9 +361,9 @@ async fn init_task_scheduler(
                     if let (Some(job_hour), Some(job_minute)) =
                         (registration_data.2, registration_data.3)
                     {
-                        // filter only registrations with same mensa id as update
+                        // send update to all subscribers of this mensa id
                         if mensa_id == job_handler_task.mensa_id.unwrap()
-                        // only push updates after first auto msg: job hour has to be sooner, or same hour but minute has to be sooner
+                        // only send updates after job message has been sent: job hour has to be earlier OR same hour, earlier minute
                         && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
                         {
                             log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
@@ -415,3 +415,7 @@ async fn init_task_scheduler(
         }
     }
 }
+
+// async fn check_campusdual() {
+//     todo!()
+// }
