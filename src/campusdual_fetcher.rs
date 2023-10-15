@@ -26,36 +26,37 @@ async fn extract_data(html_text: String) -> Vec<(String, String, usize)> {
     grades
 }
 
-pub async fn get_campusdual_grades(uname: String, password: String) -> Vec<(String, String, usize)> {  
+pub async fn get_campusdual_grades(
+    uname: String,
+    password: String,
+) -> Result<Vec<(String, String, usize)>, Box<dyn std::error::Error>> {
     let client = reqwest::Client::builder()
         .cookie_store(true)
-        .build()
-        .unwrap();
+        .build()?;
 
     let resp = client
         .get("https://erp.campus-dual.de/sap/bc/webdynpro/sap/zba_initss?sap-client=100&sap-language=de&uri=https://selfservice.campus-dual.de/index/login")
         .send()
-        .await
-        .unwrap();
+        .await?;
     println!("load site: {}", resp.status());
 
-    // let xsrf = {
-    let document = Html::parse_document(&resp.text().await.unwrap());
-    let xsrf = document
-        .select(&Selector::parse(r#"input[name="sap-login-XSRF"]"#).unwrap())
-        .next()
-        .unwrap()
-        .value()
-        .attr("value")
-        .unwrap()
-        .to_string();
+    let xsrf = {
+        let document = Html::parse_document(&resp.text().await.unwrap());
+        document
+            .select(&Selector::parse(r#"input[name="sap-login-XSRF"]"#).unwrap())
+            .next()
+            .unwrap()
+            .value()
+            .attr("value")
+            .unwrap()
+            .to_string()
+    };
 
     let form = [
         ("sap-user", uname),
         ("sap-password", password),
         ("sap-login-XSRF", xsrf),
     ];
-    
 
     let resp = client
         .post("https://erp.campus-dual.de/sap/bc/webdynpro/sap/zba_initss?uri=https%3a%2f%2fselfservice.campus-dual.de%2findex%2flogin&sap-client=100&sap-language=DE")
@@ -68,17 +69,19 @@ pub async fn get_campusdual_grades(uname: String, password: String) -> Vec<(Stri
     log::debug!("zba_initss: {}", resp.status());
 
     // check if title of redirect page implicates successful login
-    let zba_init_doc = Html::parse_document(&resp.text().await.unwrap());
-    match zba_init_doc
-        .select(&Selector::parse("title").unwrap())
-        .next()
-        .unwrap()
-        .inner_html()
-        .as_str()
     {
-        "Anmeldung" => panic!("Login failed"),
-        "Initialisierung Selfservices" => {}
-        _ => log::warn!("unerwarteter Seitenname nach Anmeldung (behandle wie Erfolg...)"),
+        let zba_init_doc = Html::parse_document(&resp.text().await.unwrap());
+        match zba_init_doc
+            .select(&Selector::parse("title").unwrap())
+            .next()
+            .unwrap()
+            .inner_html()
+            .as_str()
+        {
+            "Anmeldung" => panic!("Login failed"),
+            "Initialisierung Selfservices" => {}
+            _ => log::warn!("unerwarteter Seitenname nach Anmeldung (behandle wie Erfolg...)"),
+        }
     }
 
     let resp = client
@@ -88,5 +91,5 @@ pub async fn get_campusdual_grades(uname: String, password: String) -> Vec<(Stri
         .unwrap();
     log::debug!("get exams: {}", resp.status());
 
-    extract_data(resp.text().await.unwrap()).await
+    Ok(extract_data(resp.text().await.unwrap()).await)
 }

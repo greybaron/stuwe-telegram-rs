@@ -13,6 +13,7 @@ name = "mm-telegram-rs"
 path = "src/bin/mm-telegram-bin.rs"
 
 [dependencies]
+cfg-if = "1.0.0"
 chrono = "0.4.26"
 clap = { version = "4.4.6", features = ["derive", "wrap_help"] }
 log = "0.4"
@@ -35,7 +36,7 @@ uuid = "1.4.0"
 
 [features]
 campusdual = []
-default = ["campusdual"]
+# default = ["campusdual"]
 
 [profile.release]
 strip = true

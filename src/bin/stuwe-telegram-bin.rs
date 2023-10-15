@@ -1,9 +1,14 @@
 use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
 };
-use stuwe_telegram_rs::campusdual_fetcher::get_campusdual_grades;
+cfg_if::cfg_if! {
+    if #[cfg(feature = "campusdual")] {
+        use stuwe_telegram_rs::campusdual_fetcher::get_campusdual_grades;
+        use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
+    }
+}
+
 use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
-use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
@@ -18,7 +23,6 @@ use stuwe_telegram_rs::shared_main::{
 use chrono::Timelike;
 use clap::Parser;
 use log::log_enabled;
-use tokio::task::{spawn_local, self};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -179,8 +183,7 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
-    #[cfg(feature = "campusdual")]
-    cd_data: CampusDualData,
+    #[cfg(feature = "campusdual")] cd_data: CampusDualData,
     mensen_ids: Vec<u8>,
 ) {
     let backend = Backend::StuWe;
@@ -199,15 +202,12 @@ async fn init_task_scheduler(
     // let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
     let cache_and_broadcast_job = Job::new_async("0/10 * * * * *", move |_uuid, mut _l| {
         let registration_tx = registration_tx_istg.clone();
-        let mensen_ids = mensen_ids.clone();
+        let _mensen_ids = mensen_ids.clone();
 
         #[cfg(feature = "campusdual")]
         let cd_data = cd_data.clone();
 
         Box::pin(async move {
-            // tokio::spawn(future)
-            // let a = get_campusdual_grades(cd_data.username, cd_data.password).await;
-            // dbg!(cd_data.username);
             if cfg!(feature = "campusdual") {
                 log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
             } else {
@@ -231,18 +231,12 @@ async fn init_task_scheduler(
                     .unwrap();
             }
 
-            // let local = task::LocalSet::new();
-            // let test = local.run_until(async move {
-            //     task::spawn_local(async move {
-            //         println!("{:?}", get_campusdual_grades(cd_data.username, cd_data.password).await);
-            //     }).await.unwrap();
-            // }).await;
-            let test = get_campusdual_grades("a".into(), "a".into()).await;
-
-            // let a = spawn_local();
-            // let bruh = a.await.unwrap();
-            // dbg!(bruh);
-
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "campusdual")] {
+                    let grades = get_campusdual_grades(cd_data.username, cd_data.password).await;
+                    println!("{:?}", grades.unwrap());
+                }
+            }
         })
     })
     .unwrap();
