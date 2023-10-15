@@ -1,7 +1,9 @@
 use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
 };
+use stuwe_telegram_rs::campusdual_fetcher::get_campusdual_grades;
 use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
+use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
@@ -14,7 +16,9 @@ use stuwe_telegram_rs::shared_main::{
 };
 
 use chrono::Timelike;
+use clap::Parser;
 use log::log_enabled;
+use tokio::task::{spawn_local, self};
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -31,17 +35,65 @@ use teloxide::{
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
+#[cfg(feature = "campusdual")]
+/// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
+/// {n}CampusDual support is enabled.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+
+struct Args {
+    /// The telegram bot token to be used
+    #[arg(short, long)]
+    token: String,
+    #[arg(short, long, id = "CAMPUSDUAL-USER")]
+    user: String,
+    #[arg(short, long, id = "CD-PASSWORD")]
+    password: String,
+    /// The Chat-ID which will receive CampusDual exam scores
+    #[arg(short, long)]
+    chatid: String,
+    /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
+    #[arg(short, long)]
+    verbose: bool,
+}
+#[cfg(not(feature = "campusdual"))]
+/// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
+/// {n}CampusDual support is disabled.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The telegram bot token to be used
+    #[arg(short, long)]
+    token: String,
+    /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
+    #[arg(short, long)]
+    verbose: bool,
+}
+
 #[tokio::main]
 async fn main() {
-    logger_init(module_path!());
+    let args = Args::parse();
 
+    if args.verbose {
+        std::env::set_var("RUST_LOG", "debug");
+    }
+
+    #[cfg(feature = "campusdual")]
+    let cd_data = CampusDualData {
+        username: args.user,
+        password: args.password,
+        chat_id: args.chatid,
+    };
+
+    logger_init(module_path!());
     log::info!("Starting command bot...");
 
-    let bot = Bot::from_env();
+    let bot = Bot::new(args.token);
+
     let mensen = BTreeMap::from(MENSEN);
 
-    if !log_enabled!(log::Level::Debug) {
-        log::info!("Set env variable 'RUST_LOG=debug' for performance metrics");
+    if !log_enabled!(log::Level::Debug) || !log_enabled!(log::Level::Trace) {
+        log::info!("Enable debug logging for performance metrics");
     }
 
     let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
@@ -65,6 +117,8 @@ async fn main() {
                 job_rx,
                 query_registration_tx,
                 loaded_user_data,
+                #[cfg(feature = "campusdual")]
+                cd_data,
                 mensen.values().copied().collect(),
             )
             .await;
@@ -125,6 +179,8 @@ async fn init_task_scheduler(
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
+    #[cfg(feature = "campusdual")]
+    cd_data: CampusDualData,
     mensen_ids: Vec<u8>,
 ) {
     let backend = Backend::StuWe;
@@ -140,15 +196,27 @@ async fn init_task_scheduler(
 
     // run cache update every 5 minutes
     let registration_tx_istg = registration_tx.clone();
-    let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
-        log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
-
+    // let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
+    let cache_and_broadcast_job = Job::new_async("0/10 * * * * *", move |_uuid, mut _l| {
         let registration_tx = registration_tx_istg.clone();
-
         let mensen_ids = mensen_ids.clone();
+
+        #[cfg(feature = "campusdual")]
+        let cd_data = cd_data.clone();
+
         Box::pin(async move {
+            // tokio::spawn(future)
+            // let a = get_campusdual_grades(cd_data.username, cd_data.password).await;
+            // dbg!(cd_data.username);
+            if cfg!(feature = "campusdual") {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
+            } else {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
+            }
+
             let registration_tx = registration_tx.clone();
-            let today_changed_mensen = update_cache(&mensen_ids).await;
+            // let today_changed_mensen = update_cache(&mensen_ids).await;
+            let today_changed_mensen = vec![];
 
             for mensa in today_changed_mensen {
                 registration_tx
@@ -162,6 +230,19 @@ async fn init_task_scheduler(
                     })
                     .unwrap();
             }
+
+            // let local = task::LocalSet::new();
+            // let test = local.run_until(async move {
+            //     task::spawn_local(async move {
+            //         println!("{:?}", get_campusdual_grades(cd_data.username, cd_data.password).await);
+            //     }).await.unwrap();
+            // }).await;
+            let test = get_campusdual_grades("a".into(), "a".into()).await;
+
+            // let a = spawn_local();
+            // let bruh = a.await.unwrap();
+            // dbg!(bruh);
+
         })
     })
     .unwrap();

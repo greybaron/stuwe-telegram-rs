@@ -19,3 +19,9 @@ pub struct SingleMeal {
     pub additional_ingredients: Vec<String>,
     pub price: String,
 }
+#[derive(Clone)]
+pub struct CampusDualData {
+    pub username: String,
+    pub password: String,
+    pub chat_id: String
+}
