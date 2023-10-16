@@ -1,6 +1,12 @@
 use scraper::{Html, Selector};
+use tokio::{
+    fs::File,
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
-async fn extract_data(html_text: String) -> Vec<(String, String, usize)> {
+use crate::data_types::stuwe_data_types::{CampusDualError, CampusDualGrade};
+
+async fn extract_data(html_text: String) -> Vec<CampusDualGrade> {
     let mut grades = Vec::new();
 
     let document = Html::parse_document(&html_text);
@@ -20,7 +26,11 @@ async fn extract_data(html_text: String) -> Vec<(String, String, usize)> {
         let subline_selector = &Selector::parse(&format!(".child-of-{}", l_id)).unwrap();
         let sub_count = table.select(subline_selector).count();
 
-        grades.push((name.to_string(), grade.to_string(), sub_count));
+        grades.push(CampusDualGrade {
+            class: name.to_string(),
+            grade: grade.to_string(),
+            subgrades: sub_count,
+        });
     }
 
     grades
@@ -29,16 +39,17 @@ async fn extract_data(html_text: String) -> Vec<(String, String, usize)> {
 pub async fn get_campusdual_grades(
     uname: String,
     password: String,
-) -> Result<Vec<(String, String, usize)>, Box<dyn std::error::Error>> {
-    let client = reqwest::Client::builder()
-        .cookie_store(true)
-        .build()?;
+) -> Result<Vec<CampusDualGrade>, Box<dyn std::error::Error + Sync + Send>> {
+    let client = reqwest::Client::builder().cookie_store(true).build()?;
 
     let resp = client
         .get("https://erp.campus-dual.de/sap/bc/webdynpro/sap/zba_initss?sap-client=100&sap-language=de&uri=https://selfservice.campus-dual.de/index/login")
         .send()
         .await?;
-    println!("load site: {}", resp.status());
+
+    if resp.status() != 200 {
+        return Err(CampusDualError::CdInitFailed(resp.status().as_u16()).into());
+    }
 
     let xsrf = {
         let document = Html::parse_document(&resp.text().await.unwrap());
@@ -66,7 +77,9 @@ pub async fn get_campusdual_grades(
         .await
         .unwrap();
 
-    log::debug!("zba_initss: {}", resp.status());
+    if resp.status() != 200 {
+        return Err(CampusDualError::CdZbaFailed(resp.status().as_u16()).into());
+    }
 
     // check if title of redirect page implicates successful login
     {
@@ -78,9 +91,9 @@ pub async fn get_campusdual_grades(
             .inner_html()
             .as_str()
         {
-            "Anmeldung" => panic!("Login failed"),
+            "Anmeldung" => return Err(CampusDualError::CdBadCredentials.into()),
             "Initialisierung Selfservices" => {}
-            _ => log::warn!("unerwarteter Seitenname nach Anmeldung (behandle wie Erfolg...)"),
+            _ => log::warn!("Unexpected redirect, treating as success"),
         }
     }
 
@@ -92,4 +105,41 @@ pub async fn get_campusdual_grades(
     log::debug!("get exams: {}", resp.status());
 
     Ok(extract_data(resp.text().await.unwrap()).await)
+}
+
+pub async fn compare_campusdual_grades(
+    recv_grades: &Vec<CampusDualGrade>,
+) -> Option<Vec<CampusDualGrade>> {
+    let mut f = match File::open("grades.json").await {
+        Ok(f) => f,
+        Err(_) => {
+            let mut f = File::create("grades.json").await.unwrap();
+            let json_str = serde_json::to_string(recv_grades).unwrap();
+            f.write_all(json_str.as_bytes()).await.unwrap();
+            return Some(recv_grades.to_vec());
+        }
+    };
+    let mut new_grades = vec![];
+
+    let mut old_grades_str = String::new();
+    f.read_to_string(&mut old_grades_str).await.unwrap();
+    let old_grades: Vec<CampusDualGrade> = serde_json::from_str(&old_grades_str).unwrap();
+
+    for grade in recv_grades {
+        if !old_grades.contains(grade) {
+            new_grades.push(grade.clone());
+        }
+    }
+
+    if new_grades.is_empty() {
+        None
+    } else {
+        Some(new_grades)
+    }
+}
+
+pub async fn save_campusdual_grades(recv_grades: &Vec<CampusDualGrade>) {
+    let mut f = File::create("grades.json").await.unwrap();
+    let json_str = serde_json::to_string(recv_grades).unwrap();
+    f.write_all(json_str.as_bytes()).await.unwrap();
 }

@@ -4,3 +4,4 @@ mensimates.sqlite
 
 .cargo/
 build.sh
+grades.json

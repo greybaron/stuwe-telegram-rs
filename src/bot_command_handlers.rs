@@ -232,10 +232,9 @@ pub async fn start_time_dialogue(
     registration_tx
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
-    let qr_reg = query_registration_rx.recv().await.unwrap();
-    // if query_registration_rx.recv().await.unwrap().is_some() {
-    if let Some(regist) = qr_reg {
-        log::error!(
+
+    if let Some(regist) = query_registration_rx.recv().await.unwrap() {
+        log::info!(
             "REG: {:02}:{:02} 📌{}",
             regist.2.unwrap_or_default(),
             regist.3.unwrap_or_default(),

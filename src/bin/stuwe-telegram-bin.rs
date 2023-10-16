@@ -3,11 +3,12 @@ use stuwe_telegram_rs::bot_command_handlers::{
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "campusdual")] {
-        use stuwe_telegram_rs::campusdual_fetcher::get_campusdual_grades;
+        use stuwe_telegram_rs::campusdual_fetcher::{get_campusdual_grades, compare_campusdual_grades};
         use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
     }
 }
 
+use stuwe_telegram_rs::campusdual_fetcher::save_campusdual_grades;
 use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
@@ -55,7 +56,7 @@ struct Args {
     password: String,
     /// The Chat-ID which will receive CampusDual exam scores
     #[arg(short, long)]
-    chatid: String,
+    chatid: i64,
     /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
     #[arg(short, long)]
     verbose: bool,
@@ -140,7 +141,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -199,24 +200,23 @@ async fn init_task_scheduler(
 
     // run cache update every 5 minutes
     let registration_tx_istg = registration_tx.clone();
-    // let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
-    let cache_and_broadcast_job = Job::new_async("0/10 * * * * *", move |_uuid, mut _l| {
+    let bot_cdgrade = bot.clone();
+    let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         let registration_tx = registration_tx_istg.clone();
-        let _mensen_ids = mensen_ids.clone();
+        let mensen_ids = mensen_ids.clone();
 
         #[cfg(feature = "campusdual")]
         let cd_data = cd_data.clone();
+        let bot_cdgrade = bot_cdgrade.clone();
 
         Box::pin(async move {
-            if cfg!(feature = "campusdual") {
-                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
-            } else {
-                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
-            }
+            #[cfg(feature = "campusdual")]
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CmpDual");
+            #[cfg(not(feature = "campusdual"))]
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
             let registration_tx = registration_tx.clone();
-            // let today_changed_mensen = update_cache(&mensen_ids).await;
-            let today_changed_mensen = vec![];
+            let today_changed_mensen = update_cache(&mensen_ids).await;
 
             for mensa in today_changed_mensen {
                 registration_tx
@@ -234,7 +234,30 @@ async fn init_task_scheduler(
             cfg_if::cfg_if! {
                 if #[cfg(feature = "campusdual")] {
                     let grades = get_campusdual_grades(cd_data.username, cd_data.password).await;
-                    println!("{:?}", grades.unwrap());
+                    match grades {
+                        Ok(grades) => {
+                            let new_grades = compare_campusdual_grades(&grades).await;
+                            if let Some(new_grades) = new_grades {
+                                log::info!("Got new grades! Sending to {}", cd_data.chat_id);
+
+                                let mut msg = String::from("Neue Noten:");
+                                for grade in new_grades {
+                                    msg.push_str(&format!("\n{}: {}", grade.class, grade.grade));
+                                }
+                                match bot_cdgrade.send_message(ChatId(cd_data.chat_id), msg).await {
+                                    Ok(_) => save_campusdual_grades(&grades).await,
+                                    Err(e) => {
+                                        log::error!("{}", e);
+                                    }
+                                }
+                            }
+                            // println!("NEUE GRADE");
+                            // println!("{:?}", new_grade);
+                        },
+                        Err(e) => {
+                            log::error!("{}", e);
+                        }
+                    }
                 }
             }
         })
@@ -320,7 +343,7 @@ async fn init_task_scheduler(
             // KEEP THIS ONE
             JobType::UpdateRegistration => {
                 if let Some(mensa) = job_handler_task.mensa_id {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
                     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
@@ -490,7 +513,3 @@ async fn init_task_scheduler(
         }
     }
 }
-
-// async fn check_campusdual() {
-//     todo!()
-// }

@@ -233,7 +233,7 @@ async fn init_task_scheduler(
             }
             JobType::UpdateRegistration => {
                 if let Some(mensa) = job_handler_task.mensa_id {
-                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed M📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
+                    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
                 }
                 if job_handler_task.hour.is_some() {
                     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
