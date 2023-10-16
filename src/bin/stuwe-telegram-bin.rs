@@ -93,11 +93,10 @@ async fn main() {
     log::info!("Starting command bot...");
 
     let bot = Bot::new(args.token);
-
     let mensen = BTreeMap::from(MENSEN);
 
     if !log_enabled!(log::Level::Debug) || !log_enabled!(log::Level::Trace) {
-        log::info!("Enable debug logging for performance metrics");
+        log::info!("Enable verbose logging for performance metrics");
     }
 
     let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
@@ -140,7 +139,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        // .enable_ctrlc_handler()
+        .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;

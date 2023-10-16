@@ -11,6 +11,7 @@ use stuwe_telegram_rs::db_operations::{
 };
 use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
 
+use clap::Parser;
 use log::log_enabled;
 use std::{
     collections::{BTreeMap, HashMap},
@@ -27,18 +28,37 @@ use teloxide::{
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
+/// Telegram bot to receive daily meal plans powered by MensiMates.
+/// {n}CampusDual support is disabled.
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// The telegram bot token to be used
+    #[arg(short, long)]
+    token: String,
+    /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
+    #[arg(short, long)]
+    verbose: bool,
+}
+
 #[tokio::main]
 async fn main() {
-    logger_init(module_path!());
+    let args = Args::parse();
 
+    if args.verbose {
+        println!("Enabling verbose logging");
+        std::env::set_var("RUST_LOG", "debug");
+    }
+
+    logger_init(module_path!());
     log::info!("Starting command bot...");
 
-    let bot = Bot::from_env();
+    let bot = Bot::new(args.token);
     let mensen = BTreeMap::from(MENSEN);
     let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
 
-    if !log_enabled!(log::Level::Debug) {
-        log::info!("Set env variable 'RUST_LOG=debug' for performance metrics");
+    if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
+        log::info!("Enable verbose logging for performance metrics");
     }
 
     let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
