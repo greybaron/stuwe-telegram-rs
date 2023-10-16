@@ -24,7 +24,7 @@ pub struct SingleMeal {
 pub struct CampusDualData {
     pub username: String,
     pub password: String,
-    pub chat_id: i64
+    pub chat_id: i64,
 }
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CampusDualGrade {

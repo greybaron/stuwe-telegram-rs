@@ -3,12 +3,11 @@ use stuwe_telegram_rs::bot_command_handlers::{
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "campusdual")] {
-        use stuwe_telegram_rs::campusdual_fetcher::{get_campusdual_grades, compare_campusdual_grades};
+        use stuwe_telegram_rs::campusdual_fetcher::{get_campusdual_grades, compare_campusdual_grades, save_campusdual_grades};
         use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
     }
 }
 
-use stuwe_telegram_rs::campusdual_fetcher::save_campusdual_grades;
 use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
