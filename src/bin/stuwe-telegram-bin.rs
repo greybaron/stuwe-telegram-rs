@@ -76,6 +76,7 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    console_subscriber::init();
     let args = Args::parse();
 
     if args.verbose {
