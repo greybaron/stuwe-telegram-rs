@@ -5,23 +5,29 @@ use rand::Rng;
 use teloxide::utils::markdown;
 use tokio::sync::RwLock;
 
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use std::{collections::HashMap, time::Instant};
 
-pub async fn get_jwt_token() -> String {
-    let client = reqwest::Client::new();
-    let mut map = HashMap::new();
+pub async fn get_jwt_token() -> Result<String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(55))
+        .build()?;
 
-    map.insert("apiUsername", "apiuser_telegram");
-    map.insert("password", "telegrambesser");
+    let json = HashMap::from([
+        ("apiUsername", "apiuser_telegram"),
+        ("password", "telegrambesser"),
+    ]);
 
-    let login_resp = client
+    client
         .post("https://api.olech2412.de/mensaHub/auth/login")
-        .json(&map)
+        .json(&json)
         .send()
-        .await;
-
-    login_resp.unwrap().text().await.unwrap()
+        .await?
+        .error_for_status()?
+        .text()
+        .await
+        .context("JWT request returned no text")
 }
 
 async fn mm_json_request(
@@ -79,18 +85,13 @@ async fn get_mensimates_json(
         ))
         .bearer_auth(&token)
         .send()
-        .await;
+        .await?
+        .error_for_status()?;
 
-    match response {
-        Ok(t) => match t.status() {
-            reqwest::StatusCode::OK => Ok(t.text().await.unwrap()),
-            _ => Err(t.error_for_status().unwrap_err()),
-        },
-        Err(e) => Err(e),
-    }
+    response.text().await
 }
 
-pub async fn mm_b_meal_msg(
+pub async fn mm_build_meal_msg(
     days_forward: i64,
     mensa_location: u8,
     jwt_lock: Arc<RwLock<String>>,
@@ -121,7 +122,7 @@ pub async fn mm_b_meal_msg(
     log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals(requested_date, mensa_location, jwt_lock).await;
+    let day_meals = get_meals_from_db(requested_date, mensa_location, jwt_lock).await;
     let german_date = german_date_fmt(requested_date.date_naive());
 
     // warn if requested "today" was raised to next monday (requested on sat/sun)
@@ -160,17 +161,21 @@ pub async fn mm_b_meal_msg(
 
                 for meal_group in structured_day_meals {
                     // Bold type of meal (-group)
-
                     let title = meal_group.0;
                     msg += &format!("\n{}\n", markdown::bold(&title));
 
-                    let meal_group = meal_group.1;
+                    let meals_in_group = meal_group.1;
+                    if meals_in_group.is_empty() {
+                        msg += &format!(" • {}\n", markdown::underline("Keine Gerichte..."));
+                        continue;
+                    }
 
-                    let price_first_meal = meal_group.first().unwrap().price.clone();
-                    let price_is_shared =
-                        meal_group.iter().all(|item| item.price == price_first_meal);
+                    let price_first_meal = meals_in_group.first().unwrap().price.clone();
+                    let price_is_shared = meals_in_group
+                        .iter()
+                        .all(|item| item.price == price_first_meal);
 
-                    for meal in meal_group {
+                    for meal in meals_in_group {
                         msg += &format!(" • {}\n", markdown::underline(&meal.name));
                         let sub_ingredients = &meal
                             .description
@@ -202,7 +207,7 @@ pub async fn mm_b_meal_msg(
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(
+async fn get_meals_from_db(
     requested_date: DateTime<Local>,
     mensa_location: u8,
     jwt_lock: Arc<RwLock<String>>,

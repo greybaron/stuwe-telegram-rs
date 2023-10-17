@@ -14,7 +14,7 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
 use crate::{
-    data_backend::{mm_parser::mm_b_meal_msg, stuwe_parser::stuwe_b_meal_msg},
+    data_backend::{mm_parser::mm_build_meal_msg, stuwe_parser::stuwe_build_meal_msg},
     data_types::{Backend, Command, NO_DB_MSG},
 };
 use crate::{
@@ -103,8 +103,10 @@ pub async fn build_meal_message_dispatcher(
     jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> String {
     match backend {
-        Backend::MensiMates => mm_b_meal_msg(days_forward, mensa_location, jwt_lock.unwrap()).await,
-        Backend::StuWe => stuwe_b_meal_msg(days_forward, mensa_location).await,
+        Backend::MensiMates => {
+            mm_build_meal_msg(days_forward, mensa_location, jwt_lock.unwrap()).await
+        }
+        Backend::StuWe => stuwe_build_meal_msg(days_forward, mensa_location).await,
     }
 }
 

@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use scraper::{Html, Selector};
 use tokio::{
     fs::File,
@@ -6,22 +7,25 @@ use tokio::{
 
 use crate::data_types::stuwe_data_types::{CampusDualError, CampusDualGrade};
 
-async fn extract_data(html_text: String) -> Vec<CampusDualGrade> {
+async fn extract_data(html_text: String) -> Result<Vec<CampusDualGrade>> {
     let mut grades = Vec::new();
 
     let document = Html::parse_document(&html_text);
     let table = document
         .select(&Selector::parse("#acwork tbody").unwrap())
         .next()
-        .unwrap();
+        .context("CD grades page: #acwork tbody missing")?;
     let top_level_line_selector = Selector::parse(".child-of-node-0").unwrap();
     let top_level_lines = table.select(&top_level_line_selector);
     for line in top_level_lines {
-        let l_id = line.value().attr("id").unwrap();
+        let l_id = line
+            .value()
+            .attr("id")
+            .context("CD: grades table line has no ID")?;
         let content_selector = &Selector::parse("td").unwrap();
         let mut content = line.select(content_selector);
         let name = content.next().unwrap().text().next().unwrap();
-        let grade = content.next().unwrap().text().next().unwrap(); // .inner_html();
+        let grade = content.next().unwrap().text().next().unwrap();
 
         let subline_selector = &Selector::parse(&format!(".child-of-{}", l_id)).unwrap();
         let sub_count = table.select(subline_selector).count();
@@ -33,30 +37,27 @@ async fn extract_data(html_text: String) -> Vec<CampusDualGrade> {
         });
     }
 
-    grades
+    Ok(grades)
 }
 
 pub async fn get_campusdual_grades(
     uname: String,
     password: String,
-) -> Result<Vec<CampusDualGrade>, Box<dyn std::error::Error + Sync + Send>> {
+) -> Result<Vec<CampusDualGrade>> {
     let client = reqwest::Client::builder().cookie_store(true).build()?;
 
     let resp = client
         .get("https://erp.campus-dual.de/sap/bc/webdynpro/sap/zba_initss?sap-client=100&sap-language=de&uri=https://selfservice.campus-dual.de/index/login")
         .send()
-        .await?;
-
-    if resp.status() != 200 {
-        return Err(CampusDualError::CdInitFailed(resp.status().as_u16()).into());
-    }
+        .await?
+        .error_for_status()?;
 
     let xsrf = {
-        let document = Html::parse_document(&resp.text().await.unwrap());
+        let document = Html::parse_document(&resp.text().await?);
         document
             .select(&Selector::parse(r#"input[name="sap-login-XSRF"]"#).unwrap())
             .next()
-            .unwrap()
+            .context("CD login stage 1: XSRF token missing")?
             .value()
             .attr("value")
             .unwrap()
@@ -74,12 +75,8 @@ pub async fn get_campusdual_grades(
         .form(&form)
         .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36")
         .send()
-        .await
-        .unwrap();
-
-    if resp.status() != 200 {
-        return Err(CampusDualError::CdZbaFailed(resp.status().as_u16()).into());
-    }
+        .await?
+        .error_for_status()?;
 
     // check if title of redirect page implicates successful login
     {
@@ -100,11 +97,10 @@ pub async fn get_campusdual_grades(
     let resp = client
         .get("https://selfservice.campus-dual.de/acwork/index")
         .send()
-        .await
-        .unwrap();
+        .await?;
     log::debug!("get exams: {}", resp.status());
 
-    Ok(extract_data(resp.text().await.unwrap()).await)
+    extract_data(resp.text().await.unwrap()).await
 }
 
 pub async fn compare_campusdual_grades(

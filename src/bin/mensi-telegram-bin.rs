@@ -46,7 +46,6 @@ async fn main() {
     let args = Args::parse();
 
     if args.verbose {
-        println!("Enabling verbose logging");
         std::env::set_var("RUST_LOG", "debug");
     }
 
@@ -157,8 +156,16 @@ async fn init_task_scheduler(
         log::debug!("Updating JWT token");
         let jwt_lock = jwt_lock.clone();
         let mut wr = jwt_lock.write_owned().await;
-        *wr = get_jwt_token().await;
-        log::debug!("Got JWT: {:.2?}", now.elapsed());
+        *wr = match get_jwt_token().await {
+            Ok(token) => {
+                log::debug!("Got JWT: {:.2?}", now.elapsed());
+                token
+            }
+            Err(e) => {
+                log::error!("Error getting JWT token: {}", e);
+                String::new()
+            }
+        };
     }
     {
         let jwt_lock = jwt_lock.clone();
@@ -168,8 +175,16 @@ async fn init_task_scheduler(
                 let now = Instant::now();
                 log::debug!("Updating JWT token");
                 let mut wr = jwt_lock.write_owned().await;
-                *wr = get_jwt_token().await;
-                log::debug!("Got JWT: {:.2?}", now.elapsed());
+                *wr = match get_jwt_token().await {
+                    Ok(token) => {
+                        log::debug!("Got JWT: {:.2?}", now.elapsed());
+                        token
+                    }
+                    Err(e) => {
+                        log::error!("Error getting JWT token: {}", e);
+                        String::new()
+                    }
+                };
             })
         })
         .unwrap();

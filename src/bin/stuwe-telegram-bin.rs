@@ -193,8 +193,10 @@ async fn init_task_scheduler(
     // always update cache on startup
     // start caching every 5 minutes and cache once at startup
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    update_cache(&mensen_ids).await;
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!");
+    match update_cache(&mensen_ids).await {
+        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
+        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
+    }
 
     // run cache update every 5 minutes
     let registration_tx_istg = registration_tx.clone();
@@ -214,28 +216,27 @@ async fn init_task_scheduler(
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
             let registration_tx = registration_tx.clone();
-            let today_changed_mensen = update_cache(&mensen_ids).await;
-
-            for mensa in today_changed_mensen {
-                registration_tx
-                    .send(JobHandlerTask {
-                        job_type: JobType::BroadcastUpdate,
-                        chat_id: None,
-                        mensa_id: Some(mensa),
-                        hour: None,
-                        minute: None,
-                        callback_id: None,
-                    })
-                    .unwrap();
+            // let today_changed_mensen = update_cache(&mensen_ids).await?;
+            if let Ok(today_changed_mensen) = update_cache(&mensen_ids).await {
+                for mensa in today_changed_mensen {
+                    registration_tx
+                        .send(JobHandlerTask {
+                            job_type: JobType::BroadcastUpdate,
+                            chat_id: None,
+                            mensa_id: Some(mensa),
+                            hour: None,
+                            minute: None,
+                            callback_id: None,
+                        })
+                        .unwrap();
+                }
             }
 
             cfg_if::cfg_if! {
                 if #[cfg(feature = "campusdual")] {
-                    let grades = get_campusdual_grades(cd_data.username, cd_data.password).await;
-                    match grades {
+                    match get_campusdual_grades(cd_data.username, cd_data.password).await {
                         Ok(grades) => {
-                            let new_grades = compare_campusdual_grades(&grades).await;
-                            if let Some(new_grades) = new_grades {
+                            if let Some(new_grades) = compare_campusdual_grades(&grades).await {
                                 log::info!("Got new grades! Sending to {}", cd_data.chat_id);
 
                                 let mut msg = String::from("Neue Noten:");
@@ -245,15 +246,13 @@ async fn init_task_scheduler(
                                 match bot_cdgrade.send_message(ChatId(cd_data.chat_id), msg).await {
                                     Ok(_) => save_campusdual_grades(&grades).await,
                                     Err(e) => {
-                                        log::error!("{}", e);
+                                        log::error!("Failed to send CD grades: {}", e);
                                     }
                                 }
                             }
-                            // println!("NEUE GRADE");
-                            // println!("{:?}", new_grade);
                         },
                         Err(e) => {
-                            log::error!("{}", e);
+                            log::error!("Failed to get CD grades: {}", e);
                         }
                     }
                 }

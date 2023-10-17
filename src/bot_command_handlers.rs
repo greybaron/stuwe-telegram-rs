@@ -233,13 +233,7 @@ pub async fn start_time_dialogue(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
 
-    if let Some(regist) = query_registration_rx.recv().await.unwrap() {
-        log::info!(
-            "REG: {:02}:{:02} 📌{}",
-            regist.2.unwrap_or_default(),
-            regist.3.unwrap_or_default(),
-            regist.1
-        );
+    if query_registration_rx.recv().await.unwrap().is_some() {
         let argument = msg.text().unwrap_or_default().split(' ').nth(1);
         let parsed_opt = argument.map(parse_time);
 

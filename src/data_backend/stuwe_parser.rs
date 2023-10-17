@@ -2,6 +2,7 @@ use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{MealGroup, MealsForDay, SingleMeal};
 use crate::data_types::STUWE_DB;
 
+use anyhow::{Context, Result};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
 use rusqlite::{params, Connection};
@@ -10,7 +11,7 @@ use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
-pub async fn stuwe_b_meal_msg(days_forward: i64, mensa_location: u8) -> String {
+pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance info
@@ -37,7 +38,7 @@ pub async fn stuwe_b_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals(requested_date, mensa_location).await;
+    let day_meals = get_meals_from_db(requested_date, mensa_location).await;
 
     // start message formatting
     // warn if requested "today" was raised to next monday (requested on sat/sun)
@@ -96,54 +97,68 @@ pub async fn stuwe_b_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals(requested_date: DateTime<Local>, mensa_location: u8) -> MealsForDay {
-    // returns meals struct either from cache,
-    // or starts html request, parses data; returns data and also triggers saving to cache
-
+async fn get_meals_from_db(requested_date: DateTime<Local>, mensa_location: u8) -> MealsForDay {
     let url_params = build_url_params(requested_date, mensa_location);
-
     let json_text = get_meal_from_db(&url_params).await;
-    json_to_meal(&json_text.unwrap()).await.unwrap()
+    if let Some(json_text) = json_text {
+        json_to_meal(&json_text).await
+    } else {
+        MealsForDay {
+            date: german_date_fmt(requested_date.naive_local().date()),
+            meal_groups: vec![],
+        }
+    }
 }
 
-async fn reqwest_get_html_text(url_params: &String) -> String {
+async fn reqwest_get_html_text(url_params: &String) -> Result<String> {
     // requests html from server for chosen url params and returns html_text string
 
     let url_base: String =
         "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?".to_string();
 
-    reqwest::get(url_base + url_params)
-        .await
-        .expect("URL request failed")
-        .text()
-        .await
-        .unwrap()
+    Ok(reqwest::get(url_base + url_params).await?.text().await?)
 }
 
-async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>) -> MealsForDay {
+async fn extract_data_from_html(
+    html_text: &str,
+    requested_date: DateTime<Local>,
+) -> Result<MealsForDay> {
     let now = Instant::now();
+    const FAIL: &str = "StuWe: unexpected meal format";
     let mut v_meal_groups: Vec<MealGroup> = Vec::new();
 
     let document = Html::parse_fragment(html_text);
 
     // retrieving reported date and comparing to requested date
     let date_sel = Selector::parse(r#"select#edit-date>option[selected='selected']"#).unwrap();
-    let received_date_human = document.select(&date_sel).next().unwrap().inner_html();
+    let received_date_human = document
+        .select(&date_sel)
+        .next()
+        .context("Recv. StuWe site is invalid (has no date)")?
+        .inner_html();
 
-    let sub = received_date_human.split(' ').nth(1).unwrap();
-    let received_date = NaiveDate::parse_from_str(sub, "%d.%m.%Y").unwrap();
+    let sub = received_date_human
+        .split(' ')
+        .nth(1)
+        .context("unexpected date format")?;
+    let received_date =
+        NaiveDate::parse_from_str(sub, "%d.%m.%Y").context("unexpected date format")?;
 
-    if received_date != requested_date.naive_local().date() {
-        return MealsForDay {
+    // if received date != requested date -> return empty meals struct (isn't an error, just StuWe being weird)
+    if received_date != requested_date.date_naive() {
+        return Ok(MealsForDay {
             date: german_date_fmt(requested_date.naive_local().date()),
             meal_groups: v_meal_groups,
-        };
+        });
     }
 
     let container_sel = Selector::parse(r#"section.meals"#).unwrap();
     let all_child_select = Selector::parse(r#":scope > *"#).unwrap();
 
-    let container = document.select(&container_sel).next().unwrap();
+    let container = document
+        .select(&container_sel)
+        .next()
+        .context("StuWe site has no meal container")?;
 
     for child in container.select(&all_child_select) {
         if child
@@ -153,10 +168,9 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
             // title-prim == new group -> init new group struct
             let mut meals_in_group: Vec<SingleMeal> = Vec::new();
 
-            let mut next_sibling = child.next_sibling_element().unwrap();
+            let mut next_sibling = child.next_sibling_element().context(FAIL)?;
 
             // skip headlines (or other junk elements)
-            // might loop infinitely (or probably crash) if last element is not of class .accordion.ublock :)
             while !(next_sibling
                 .value()
                 .has_class("accordion", CaseSensitivity::CaseSensitive)
@@ -164,7 +178,7 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
                     .value()
                     .has_class("u-block", CaseSensitivity::CaseSensitive))
             {
-                next_sibling = next_sibling.next_sibling_element().unwrap();
+                next_sibling = next_sibling.next_sibling_element().context(FAIL)?;
             }
 
             // "next_sibling" is now of class ".accordion.u-block", aka. a group of 1 or more dishes
@@ -184,17 +198,17 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
                     name: dish_element
                         .select(&Selector::parse(r#"header>div>div>h4"#).unwrap())
                         .next()
-                        .unwrap()
+                        .context(FAIL)?
                         .inner_html(),
                     additional_ingredients, //
                     price: dish_element
                         .select(&Selector::parse(r#"header>div>div>p"#).unwrap())
                         .next()
-                        .unwrap()
+                        .context(FAIL)?
                         .inner_html()
                         .split('\n')
                         .last()
-                        .unwrap()
+                        .context(FAIL)?
                         .trim()
                         .to_string(),
                 };
@@ -215,10 +229,10 @@ async fn extract_data_from_html(html_text: &str, requested_date: DateTime<Local>
     }
 
     log::debug!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
-    MealsForDay {
+    Ok(MealsForDay {
         date: received_date_human,
         meal_groups: v_meal_groups,
-    }
+    })
 }
 
 async fn save_meal_to_db(url_params: &str, json_text: &str) {
@@ -256,7 +270,7 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> Stri
     )
 }
 
-pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
+pub async fn update_cache(mensen: &Vec<u8>) -> Result<Vec<u8>> {
     // will be run periodically: requests all possible dates (heute/morgen/ueb) and creates/updates caches
     // returns a vector of mensa locations whose 'today' plan was updated
 
@@ -316,29 +330,28 @@ pub async fn update_cache(mensen: &Vec<u8>) -> Vec<u8> {
     // let mut today_changed = false;
     // awaiting results of every task
     for handle in handles {
-        if let Some(mensa_id) = handle.await.unwrap().0 {
+        if let Some(mensa_id) = handle.await??.0 {
             mensen_today_changed.push(mensa_id);
         }
     }
 
-    mensen_today_changed
+    Ok(mensen_today_changed)
 }
 
-async fn json_to_meal(json_text: &str) -> Option<MealsForDay> {
-    if !json_text.is_empty() {
-        Some(serde_json::from_str(json_text).unwrap())
-    } else {
-        None
-    }
+async fn json_to_meal(json_text: &str) -> MealsForDay {
+    serde_json::from_str(json_text).unwrap()
 }
 
-async fn save_to_cache(day: DateTime<Local>, mensa_id: u8) -> (Option<u8>, Option<MealsForDay>) {
+async fn save_to_cache(
+    day: DateTime<Local>,
+    mensa_id: u8,
+) -> Result<(Option<u8>, Option<MealsForDay>)> {
     let url_params = build_url_params(day, mensa_id);
 
     // getting data from server
-    let downloaded_html = reqwest_get_html_text(&url_params).await;
+    let downloaded_html = reqwest_get_html_text(&url_params).await?;
 
-    let downloaded_meals = extract_data_from_html(&downloaded_html, day).await;
+    let downloaded_meals = extract_data_from_html(&downloaded_html, day).await?;
     // serialize downloaded meals
     let downloaded_json_text = serde_json::to_string(&downloaded_meals).unwrap();
     let db_json_text = get_meal_from_db(&url_params).await.unwrap_or_default();
@@ -351,8 +364,8 @@ async fn save_to_cache(day: DateTime<Local>, mensa_id: u8) -> (Option<u8>, Optio
         } else {
             None
         };
-        (today_updated, Some(downloaded_meals))
+        Ok((today_updated, Some(downloaded_meals)))
     } else {
-        (None, Some(downloaded_meals))
+        Ok((None, Some(downloaded_meals)))
     }
 }
