@@ -52,16 +52,16 @@ async fn main() {
     logger_init(module_path!());
     log::info!("Starting command bot...");
 
-    let bot = Bot::new(args.token);
-    let mensen = BTreeMap::from(MENSEN);
-    let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
-
     if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
         log::info!("Enable verbose logging for performance metrics");
     }
 
-    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
+    let mensen = BTreeMap::from(MENSEN);
+    let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
 
+    let bot = Bot::new(args.token);
+
+    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
     let (query_registration_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry

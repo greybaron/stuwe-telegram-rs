@@ -90,17 +90,26 @@ async fn main() {
     };
 
     logger_init(module_path!());
-    log::info!("Starting command bot...");
-
-    let bot = Bot::new(args.token);
-    let mensen = BTreeMap::from(MENSEN);
+    log::info!("Starting bot...");
 
     if !log_enabled!(log::Level::Debug) || !log_enabled!(log::Level::Trace) {
         log::info!("Enable verbose logging for performance metrics");
     }
 
-    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
+    let mensen = BTreeMap::from(MENSEN);
+    let mensen_ids = mensen.values().copied().collect();
 
+    // always update cache on startup
+    // start caching every 5 minutes and cache once at startup
+    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
+    match update_cache(&mensen_ids).await {
+        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
+        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
+    }
+
+    let bot = Bot::new(args.token);
+
+    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
     let (query_registration_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
@@ -111,7 +120,7 @@ async fn main() {
         // tx has to be cloned and passed to both (inside command_handler it will be resubscribed to rx)
         let registration_tx = registration_tx.clone();
         let query_registration_tx = query_registration_tx.clone();
-        let mensen = mensen.clone();
+        // let mensen = mensen.clone();
         tokio::spawn(async move {
             log::info!("Starting task scheduler...");
             init_task_scheduler(
@@ -122,7 +131,7 @@ async fn main() {
                 loaded_user_data,
                 #[cfg(feature = "campusdual")]
                 cd_data,
-                mensen.values().copied().collect(),
+                mensen_ids,
             )
             .await;
         });
@@ -189,14 +198,6 @@ async fn init_task_scheduler(
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db(STUWE_DB);
     let sched = JobScheduler::new().await.unwrap();
-
-    // always update cache on startup
-    // start caching every 5 minutes and cache once at startup
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    match update_cache(&mensen_ids).await {
-        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
-        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
-    }
 
     // run cache update every 5 minutes
     let registration_tx_istg = registration_tx.clone();
