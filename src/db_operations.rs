@@ -76,8 +76,7 @@ pub fn task_db_kill_auto(chat_id: i64, sql_filename: &str) -> rusqlite::Result<(
     Ok(())
 }
 
-pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
-    let mut tasks: Vec<JobHandlerTask> = Vec::new();
+pub fn check_or_create_db_tables(sql_filename: &str) {
     let conn = Connection::open(sql_filename).unwrap();
 
     // ensure db table exists
@@ -104,6 +103,11 @@ pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
     .unwrap()
     .execute([])
     .unwrap();
+}
+
+pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
+    let mut tasks: Vec<JobHandlerTask> = Vec::new();
+    let conn = Connection::open(sql_filename).unwrap();
 
     let mut stmt = conn
         .prepare_cached(

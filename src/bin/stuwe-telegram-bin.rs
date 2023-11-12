@@ -3,6 +3,7 @@ use stuwe_telegram_rs::bot_command_handlers::{
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "campusdual")] {
+        // GEANT_OV_RSA_CA_4_tcs-cert3.pem has to be properly set up in /etc/ssl/certs
         use stuwe_telegram_rs::campusdual_fetcher::{get_campusdual_grades, compare_campusdual_grades, save_campusdual_grades};
         use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
     }
@@ -14,7 +15,7 @@ use stuwe_telegram_rs::data_types::{
     QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
 };
 use stuwe_telegram_rs::db_operations::{
-    get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+    check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
@@ -92,7 +93,7 @@ async fn main() {
     logger_init(module_path!());
     log::info!("Starting bot...");
 
-    if !log_enabled!(log::Level::Debug) || !log_enabled!(log::Level::Trace) {
+    if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
         log::info!("Enable verbose logging for performance metrics");
     }
 
@@ -101,6 +102,7 @@ async fn main() {
 
     // always update cache on startup
     // start caching every 5 minutes and cache once at startup
+    check_or_create_db_tables(STUWE_DB);
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     match update_cache(&mensen_ids).await {
         Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),

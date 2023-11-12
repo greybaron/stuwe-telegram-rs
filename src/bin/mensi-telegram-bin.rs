@@ -7,7 +7,7 @@ use stuwe_telegram_rs::data_types::{
     QueryRegistrationType, RegistrationEntry, MENSEN, MM_DB, NO_DB_MSG,
 };
 use stuwe_telegram_rs::db_operations::{
-    get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+    check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
 
@@ -59,6 +59,7 @@ async fn main() {
     let mensen = BTreeMap::from(MENSEN);
     let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
 
+    check_or_create_db_tables(MM_DB);
     let bot = Bot::new(args.token);
 
     let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
