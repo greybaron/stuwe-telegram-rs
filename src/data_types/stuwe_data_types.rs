@@ -28,9 +28,16 @@ pub struct CampusDualData {
 }
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
 pub struct CampusDualGrade {
-    pub class: String,
+    pub name: String,
     pub grade: String,
     pub subgrades: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CampusDualSignupOption {
+    pub name: String,
+    pub verfahren: String,
+    pub status: String,
 }
 
 #[derive(Error, Debug, Clone)]

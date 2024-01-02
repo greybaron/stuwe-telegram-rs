@@ -98,7 +98,7 @@ pub async fn mm_build_meal_msg(
 ) -> String {
     let mut msg: String = String::new();
 
-    // all nows & .elapsed() are for performance info
+    // all nows & .elapsed() are for performance metrics
     let now = Instant::now();
 
     // get requested date
