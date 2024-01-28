@@ -40,23 +40,20 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
     let day_meals = get_meals_from_db(requested_date, mensa_location).await;
 
     // start message formatting
-    // warn if requested "today" was raised to next monday (requested on sat/sun)
-    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
-        Some(" (Morgen)")
-    } else if days_forward == 0 && date_raised_by_days == 2 {
-        Some(" (Übermorgen)")
-    } else {
-        None
-    };
-
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
-        "{} {}{} {}\n",
+        "{} {} {}\n",
         rand_emoji,
         markdown::italic(&day_meals.date),
-        future_day_info.unwrap_or_default(),
-        rand_emoji
+        rand_emoji,
     );
+
+    // warn if requested "today" was raised to next monday (requested on sat/sun)
+    if days_forward == 0 && date_raised_by_days == 1 {
+        msg += &markdown::italic("      (Morgen)\n");
+    } else if days_forward == 0 && date_raised_by_days == 2 {
+        msg += &markdown::italic("      (Übermorgen)\n")
+    }
 
     if day_meals.meal_groups.is_empty() {
         msg += &markdown::bold("\nkeine Daten vorhanden.\n");
@@ -132,9 +129,8 @@ async fn extract_data_from_html(
         .next()
         .context("Recv. StuWe site is invalid (has no date)")?;
 
-    let received_date_human = active_date_button.attr("data-date").unwrap().to_owned();
-
-    let received_date = NaiveDate::parse_from_str(&received_date_human, "%Y-%m-%d")
+    let received_date_str = active_date_button.attr("data-date").unwrap().to_owned();
+    let received_date = NaiveDate::parse_from_str(&received_date_str, "%Y-%m-%d")
         .context("unexpected StuWe date format")?;
 
     // if received date != requested date -> return empty meals struct (isn't an error, just StuWe being weird)
@@ -217,7 +213,7 @@ async fn extract_data_from_html(
 
     log::debug!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
     Ok(MealsForDay {
-        date: received_date_human,
+        date: german_date_fmt(received_date),
         meal_groups: v_meal_groups,
     })
 }
