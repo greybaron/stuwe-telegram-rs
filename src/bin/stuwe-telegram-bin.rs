@@ -220,7 +220,8 @@ async fn init_task_scheduler(
 
             let registration_tx = registration_tx.clone();
             // let today_changed_mensen = update_cache(&mensen_ids).await?;
-            if let Ok(today_changed_mensen) = update_cache(&mensen_ids).await {
+            match update_cache(&mensen_ids).await {
+                Ok(today_changed_mensen) => {
                 for mensa in today_changed_mensen {
                     registration_tx
                         .send(JobHandlerTask {
@@ -232,6 +233,10 @@ async fn init_task_scheduler(
                             callback_id: None,
                         })
                         .unwrap();
+                }
+            },
+                Err(e) => {
+                    log::error!("Failed to update cache: {}", e);
                 }
             }
 

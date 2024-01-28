@@ -28,6 +28,7 @@ fn escape_markdown_v2(input: &str) -> String {
         .replace('(', r"\(")
         .replace(')', r"\)")
         .replace('=', r"\=")
-        // workaround as '&' in html is improperly decoded
+        // workaround for html things not being properly decoded
         .replace("&amp;", "&")
+        .replace("&nbsp;", r" ")
 }
