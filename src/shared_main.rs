@@ -1,6 +1,9 @@
-use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant, vec};
 
-use chrono::Timelike;
+use anyhow::Context;
+use chrono::{NaiveDate, Timelike};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use teloxide::{
     prelude::*,
     utils::{command::BotCommands, markdown},
@@ -38,6 +41,52 @@ pub fn logger_init(module_path: &str) {
         .init();
 }
 
+pub async fn get_sachsen_feiertage(year: i32) -> anyhow::Result<Vec<(NaiveDate, String)>> {
+    let mut feiertage = Vec::new();
+
+    let client = reqwest::Client::new();
+
+    let url = format!("https://feiertage-api.de/api/?jahr={}&nur_land=SN", year);
+    let json_str = client.get(&url).send().await?.text().await?;
+
+    let parsed: Value = serde_json::from_str(&json_str).expect("Could not deserialize");
+    if let Some(object) = parsed.as_object() {
+        for (key, value) in object {
+            // dbg!(key, value);
+            // println!("{}: {}", value["datum"], key);
+            let date = value["datum"].as_str().context("date malformed???")?;
+            feiertage.push((
+                chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")?,
+                key.to_string(),
+            ));
+        }
+    }
+
+    Ok(feiertage)
+
+    // dbg!(json.len(), json.lines().count());
+    // let json: serde_json::Value = serde_json::from_str(&json)?;
+
+    // let test = json.as_array().unwrap();
+    // #[derive(Serialize, Deserialize, Debug, Clone)]
+    // struct kek {
+    //     name: String,
+    //     datum: String,
+    // };
+    // let a: Vec<kek> = serde_json::from_str(&json)?;
+
+    // Ok(serde_json::from_str(&json)?)
+
+    // dbg!(test);
+    // let test = json.as_array().map(|x| x.get(0).unwrap().as_str().unwrap().to_string())
+    // ;
+
+    // Ok(vec!["st".to_string()]);
+    // println!("{}", test);
+
+    // Ok(feiertage)
+}
+
 pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
     JobHandlerTask {
         job_type: JobType::QueryRegistration,
@@ -53,17 +102,9 @@ pub fn make_mensa_keyboard(
     mensen: BTreeMap<&str, u8>,
     only_mensa_upd: bool,
 ) -> InlineKeyboardMarkup {
-    // let subscribed_ids = [140, 108];
     let mut keyboard = Vec::new();
 
     for mensa in mensen {
-        // let button_text = format!("{} {}", subscribed_ids.contains(&mensa.1), mensa.0);
-        // if only_mensa_upd {
-        //     keyboard.push([InlineKeyboardButton::callback(
-        //         button_text,
-        //         format!("m_upd:{}", mensa.0),
-        //     )]);
-        // } else {
         keyboard.push([InlineKeyboardButton::callback(
             mensa.0,
             format!(
@@ -72,7 +113,6 @@ pub fn make_mensa_keyboard(
                 mensa.0
             ),
         )]);
-        // }
     }
     InlineKeyboardMarkup::new(keyboard)
 }

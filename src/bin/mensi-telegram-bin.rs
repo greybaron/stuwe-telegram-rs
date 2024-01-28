@@ -1,3 +1,4 @@
+use chrono::Datelike;
 use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
 };
@@ -9,7 +10,9 @@ use stuwe_telegram_rs::data_types::{
 use stuwe_telegram_rs::db_operations::{
     check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
-use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
+use stuwe_telegram_rs::shared_main::{
+    callback_handler, get_sachsen_feiertage, load_job, logger_init,
+};
 
 use clap::Parser;
 use log::log_enabled;
@@ -57,6 +60,7 @@ async fn main() {
     }
 
     let mensen = BTreeMap::from(MENSEN);
+    // let feiertage = get_sachsen_feiertage(chrono::Local::now().year());
     let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
 
     check_or_create_db_tables(MM_DB);
@@ -100,7 +104,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;

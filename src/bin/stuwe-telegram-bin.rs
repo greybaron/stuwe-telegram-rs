@@ -18,10 +18,11 @@ use stuwe_telegram_rs::db_operations::{
     check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
-    build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
+    build_meal_message_dispatcher, callback_handler, get_sachsen_feiertage, load_job, logger_init,
+    make_days_keyboard,
 };
 
-use chrono::Timelike;
+use chrono::{DateTime, Datelike, Local, Timelike};
 use clap::Parser;
 use log::log_enabled;
 use std::{
@@ -99,6 +100,9 @@ async fn main() {
 
     let mensen = BTreeMap::from(MENSEN);
     let mensen_ids = mensen.values().copied().collect();
+    // let date = chrono::Local::now();
+    // date.naive_local().year();
+    // let feiertage = get_sachsen_feiertage(chrono::Local::now().year());
 
     // always update cache on startup
     // start caching every 5 minutes and cache once at startup
@@ -150,7 +154,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        .enable_ctrlc_handler()
+        // .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -200,6 +204,32 @@ async fn init_task_scheduler(
     let registr_tx_loadjob = registration_tx.clone();
     let tasks_from_db = get_all_tasks_db(STUWE_DB);
     let sched = JobScheduler::new().await.unwrap();
+
+    let mut last_checked_time = RwLock::new(chrono::Local::now());
+    // should be reloaded if time rolls over
+    let mut _feiertage = get_sachsen_feiertage(last_checked_time.read().await.year()).await;
+    drop(last_checked_time);
+
+    let time_check_task = Job::new_async("* * * * * *", move |_uuid, mut _l| {
+        Box::pin(async move {
+            log::debug!(target: "stuwe_telegram_rs::TaskSched", "Checking if local time has changed");
+            let now = chrono::Local::now();
+            // let test = last_checked_time.read().await.into();
+            let maul = last_checked_time.blocking_read();
+            let diff = now.signed_duration_since(last_checked_time.read().await.into());
+            dbg!(diff);
+            if diff.num_milliseconds() > 990 {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Local time has changed, reloading feiertage");
+                // feiertage = get_sachsen_feiertage(now.year()).await;
+            }
+            *last_checked_time.write().await = chrono::Local::now();
+
+            // dbg!(diff); 
+
+        })
+    })
+    .unwrap();
+    sched.add(time_check_task).await.unwrap();
 
     // run cache update every 5 minutes
     let registration_tx_istg = registration_tx.clone();
@@ -465,6 +495,7 @@ async fn init_task_scheduler(
 
             JobType::BroadcastUpdate => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
+
                 for (chat_id, registration_data) in &loaded_user_data {
                     let mensa_id = registration_data.1;
 
