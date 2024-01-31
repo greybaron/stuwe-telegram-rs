@@ -1,4 +1,4 @@
-# Studentenwerk Mensa Bot
+# Studentenwerk Leipzig Mensa Bot
 A Telegram bot that crawls the Studentenwerk Leipzig Mensa site and returns todays' meals.
 
 ## Build Dependencies
