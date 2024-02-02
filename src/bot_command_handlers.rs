@@ -2,10 +2,12 @@
 use crate::data_backend::mm_parser::get_jwt_token;
 use crate::data_types::{
     Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask,
-    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, TimeParseError, MENSEN,
-    MM_DB, NO_DB_MSG,
+    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, TimeParseError, MM_DB,
+    NO_DB_MSG,
 };
-use crate::db_operations::{get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row};
+use crate::db_operations::{
+    get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
+};
 use crate::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
     make_mensa_keyboard, make_query_data,

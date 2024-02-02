@@ -9,13 +9,14 @@ cfg_if::cfg_if! {
     }
 }
 
-use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
+use stuwe_telegram_rs::data_backend::stuwe_parser::{get_mensen, update_cache};
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry, MENSEN, NO_DB_MSG, STUWE_DB,
+    QueryRegistrationType, RegistrationEntry, NO_DB_MSG, STUWE_DB,
 };
 use stuwe_telegram_rs::db_operations::{
-    check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+    check_or_create_db_tables, get_all_user_registrations_db, init_db_record, init_mensa_id_db,
+    task_db_kill_auto, update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
@@ -24,10 +25,7 @@ use stuwe_telegram_rs::shared_main::{
 use chrono::Timelike;
 use clap::Parser;
 use log::log_enabled;
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-};
+use std::{collections::HashMap, sync::Arc};
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -97,14 +95,18 @@ async fn main() {
         log::info!("Enable verbose logging for performance metrics");
     }
 
-    let mensen = BTreeMap::from(MENSEN);
-    let mensen_ids = mensen.values().copied().collect();
+    let mensen = get_mensen().await;
+    init_mensa_id_db(STUWE_DB, &mensen).unwrap();
+    match update_cache().await {
+        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
+        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
+    }
 
     // always update cache on startup
     // start caching every 5 minutes and cache once at startup
     check_or_create_db_tables(STUWE_DB);
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    match update_cache(&mensen_ids).await {
+    match update_cache().await {
         Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
         Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
     }
@@ -133,7 +135,6 @@ async fn main() {
                 loaded_user_data,
                 #[cfg(feature = "campusdual")]
                 cd_data,
-                mensen_ids,
             )
             .await;
         });
@@ -194,11 +195,10 @@ async fn init_task_scheduler(
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
     mut loaded_user_data: HashMap<i64, RegistrationEntry>,
     #[cfg(feature = "campusdual")] cd_data: CampusDualData,
-    mensen_ids: Vec<u8>,
 ) {
     let backend = Backend::StuWe;
     let registr_tx_loadjob = registration_tx.clone();
-    let tasks_from_db = get_all_tasks_db(STUWE_DB);
+    let tasks_from_db = get_all_user_registrations_db(STUWE_DB);
     let sched = JobScheduler::new().await.unwrap();
 
     // run cache update every 5 minutes
@@ -206,7 +206,6 @@ async fn init_task_scheduler(
     let bot_cdgrade = bot.clone();
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         let registration_tx = registration_tx_istg.clone();
-        let mensen_ids = mensen_ids.clone();
 
         #[cfg(feature = "campusdual")]
         let cd_data = cd_data.clone();
@@ -220,7 +219,7 @@ async fn init_task_scheduler(
 
             let registration_tx = registration_tx.clone();
             // let today_changed_mensen = update_cache(&mensen_ids).await?;
-            match update_cache(&mensen_ids).await {
+            match update_cache().await {
                 Ok(today_changed_mensen) => {
                 for mensa in today_changed_mensen {
                     registration_tx
