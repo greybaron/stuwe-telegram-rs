@@ -95,6 +95,8 @@ async fn main() {
         log::info!("Enable verbose logging for performance metrics");
     }
 
+    check_or_create_db_tables(STUWE_DB);
+
     let mensen = get_mensen().await;
     init_mensa_id_db(STUWE_DB, &mensen).unwrap();
     match update_cache().await {
@@ -102,9 +104,7 @@ async fn main() {
         Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
     }
 
-    // always update cache on startup
-    // start caching every 5 minutes and cache once at startup
-    check_or_create_db_tables(STUWE_DB);
+    // always update cache on startup   
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     match update_cache().await {
         Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
