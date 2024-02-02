@@ -1,0 +1,211 @@
+[
+    {
+        "meal_type": "Veganes Gericht",
+        "sub_meals": [
+            {
+                "name": "Like Chicken Mini Schnitzel",
+                "additional_ingredients": [
+                    "Rahmsoße mit Soja",
+                    "Erbsen",
+                    "Pommes frites"
+                ],
+                "price": " 3,50&nbsp;€ / 5,30&nbsp;€ / 7,30&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Vegetarisches Gericht",
+        "sub_meals": [
+            {
+                "name": "Soja-Gyros",
+                "additional_ingredients": [
+                    "Knoblauch-Mayonnaise",
+                    "Couscous mit Gemüse &amp; Minze"
+                ],
+                "price": " 3,05&nbsp;€ / 4,90&nbsp;€ / 6,70&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Fleischgericht",
+        "sub_meals": [
+            {
+                "name": "Kochklopse Königsberger Art",
+                "additional_ingredients": [
+                    "Kapernsoße",
+                    "Möhrengemüse",
+                    "Petersilienkartoffeln"
+                ],
+                "price": " 2,65&nbsp;€ / 4,40&nbsp;€ / 6,10&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Fischgericht",
+        "sub_meals": [
+            {
+                "name": "Asia Gemüse mit Sweet Chili Soße",
+                "additional_ingredients": [
+                    "Tilapiafilet mit Kartoffelkruste",
+                    "Sesamreis"
+                ],
+                "price": " 3,35&nbsp;€ / 5,20&nbsp;€ / 7,20&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "WOK",
+        "sub_meals": [
+            {
+                "name": "mit Kokos Chili Hähnchen in Streifen",
+                "additional_ingredients": [
+                    "Buntes Wokgemüse mit Reis",
+                    "Vegane Cevapcici"
+                ],
+                "price": " 3,50&nbsp;€ / 4,70&nbsp;€ / 6,20&nbsp;€ "
+            },
+            {
+                "name": "Buntes Wokgemüse mit Reis",
+                "additional_ingredients": [
+                    ""
+                ],
+                "price": " 2,50&nbsp;€ / 4,20&nbsp;€ / 5,70&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Salat",
+        "sub_meals": [
+            {
+                "name": "Kleine Salatplatte",
+                "additional_ingredients": [
+                    ""
+                ],
+                "price": " 1,60&nbsp;€ / 2,45&nbsp;€ / 3,45&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Dessert",
+        "sub_meals": [
+            {
+                "name": "Milchreis mit Beerencocktail",
+                "additional_ingredients": [
+                    "Milchreis mit Apfelmus",
+                    "Apfelmus mit Vanillesoße"
+                ],
+                "price": " 0,60&nbsp;€ / 1,10&nbsp;€ / 1,40&nbsp;€ "
+            },
+            {
+                "name": "Mousse au Chocolate",
+                "additional_ingredients": [
+                    "Vanillepudding mit Erdbeersoße",
+                    "Topfenmousse mit Erdbeer",
+                    "Kokos Chia Dessert mit Soja",
+                    "Beerencocktail mit veganer Vanillesoße"
+                ],
+                "price": " 1,00&nbsp;€ / 1,40&nbsp;€ / 1,70&nbsp;€ "
+            }
+        ]
+    },
+    { 
+        "meal_type": "Gemüsebeilage",
+        "sub_meals": [
+            {
+                "name": "Erbsen",
+                "additional_ingredients": [],
+                "price": " 0,55&nbsp;€ / 0,95&nbsp;€ / 1,30&nbsp;€ "
+            },
+            {
+                "name": "Möhrengemüse",
+                "additional_ingredients": [],
+                "price": " 0,55&nbsp;€ / 0,95&nbsp;€ / 1,30&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Sättigungsbeilage",
+        "sub_meals": [
+            {
+                "name": "Pommes frites",
+                "additional_ingredients": [],
+                "price": " 0,75&nbsp;€ / 1,15&nbsp;€ / 1,50&nbsp;€ "
+            },
+            {
+                "name": "Petersilienkartoffeln",
+                "additional_ingredients": [],
+                "price": " 0,55&nbsp;€ / 0,95&nbsp;€ / 1,30&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Pastateller",
+        "sub_meals": [
+            {
+                "name": "Tomatensoße mit Seitan-Schawarma",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            },
+            {
+                "name": "Bolognese vom Schwein",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            },
+            {
+                "name": "Tomaten-Käsesoße \"Parmarosa\"",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            },
+            {
+                "name": "Spirelli",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            },
+            {
+                "name": "Geriebener Gouda",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            },
+            {
+                "name": "Pizzaschmelz, vegan",
+                "additional_ingredients": [],
+                "price": " 2,10&nbsp;€ / 4,15&nbsp;€ / 5,50&nbsp;€ "
+            }
+        ]
+    },
+    {
+        "meal_type": "Smoothie",
+        "sub_meals": [
+            {
+                "name": "Obstbecher",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            },
+            {
+                "name": "Bananen Kokos Milch",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            },
+            {
+                "name": "Himbeer-Birne Smoothie",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            },
+            {
+                "name": "Erdbeer-Smoothie",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            },
+            {
+                "name": "Mango-Erdbeer Smoothie",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            },
+            {
+                "name": "Pfirsich Grapefruit Smoothie",
+                "additional_ingredients": [],
+                "price": " 1,80&nbsp;€ / 2,20&nbsp;€ / 2,95&nbsp;€ "
+            }
+        ]
+    }
+]

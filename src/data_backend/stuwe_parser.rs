@@ -239,9 +239,15 @@ fn extract_mealgroup_from_htmlcontainer(meal_container: ElementRef<'_>) -> Resul
 
 async fn save_meal_to_db(date: &str, mensa: u8, json_text: &str) {
     let conn = Connection::open(STUWE_DB).unwrap();
+    conn.execute(
+        "delete from meals where mensa_id = ?1 and date = ?2",
+        [mensa.to_string(), date.to_string()],
+    )
+    .unwrap();
+
     let mut stmt = conn
         .prepare_cached(
-            "replace into meals (mensa_id, date, json_text)
+            "insert into meals (mensa_id, date, json_text)
             values (?1, ?2, ?3)",
         )
         .unwrap();

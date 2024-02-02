@@ -104,7 +104,7 @@ async fn main() {
         Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
     }
 
-    // always update cache on startup   
+    // always update cache on startup
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     match update_cache().await {
         Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
