@@ -193,10 +193,18 @@ fn extract_mealgroup_from_htmlcontainer(meal_container: ElementRef<'_>) -> Resul
 
         let additional_ingredients =
             if let Some(item) = meal_element.select(&additional_ingredients_sel).next() {
-                item.inner_html()
-                    .split('·')
-                    .map(|slice| slice.trim().to_string())
-                    .collect()
+                let text = item.inner_html();
+                // for whatever reason there might be, sometimes this element exists without any content
+                if !text.is_empty() {
+                    item.inner_html()
+                        .split('·')
+                        .map(|slice| slice.trim().to_string())
+                        .collect()
+                } else {
+                    // in that case, return empty vec (otherwise it would be a vec with one empty string in it)
+                    vec![]
+                }
+                // Sosumi
             } else {
                 vec![]
             };
