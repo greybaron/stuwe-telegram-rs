@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::vec;
 
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
-use crate::data_types::stuwe_data_types::{DataForMensaForDay, MealGroup, MealsForDay, SingleMeal};
+use crate::data_types::stuwe_data_types::{DataForMensaForDay, MealGroup, SingleMeal};
 use crate::data_types::STUWE_DB;
 use crate::db_operations::mensa_name_get_id_db;
 
@@ -49,7 +49,8 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
     msg += &format!(
         "{} {} {}\n",
         rand_emoji,
-        markdown::italic(&day_meals.date),
+        german_date_fmt(requested_date.date_naive()),
+        // markdown::italic(&day_meals.date),
         rand_emoji,
     );
 
@@ -60,12 +61,12 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
         msg += &markdown::italic("      (Übermorgen)\n")
     }
 
-    if day_meals.meal_groups.is_empty() {
+    if day_meals.is_empty() {
         msg += &markdown::bold("\nkeine Daten vorhanden.\n");
     }
 
     // loop over meal groups
-    for meal_group in day_meals.meal_groups {
+    for meal_group in day_meals {
         let price_first_meal = meal_group.sub_meals.first().unwrap().price.clone();
         let price_is_shared = meal_group
             .sub_meals
@@ -98,16 +99,13 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
     escape_markdown_v2(&msg)
 }
 
-async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> MealsForDay {
+async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> Vec<MealGroup> {
     let date_str = build_date_string(requested_date);
     let json_text = get_meal_from_db(&date_str, mensa).await;
     if let Some(json_text) = json_text {
         json_to_meal(&json_text).await
     } else {
-        MealsForDay {
-            date: german_date_fmt(requested_date.naive_local().date()),
-            meal_groups: vec![],
-        }
+        vec![]
     }
 }
 
@@ -339,7 +337,7 @@ pub async fn update_cache() -> Result<Vec<u8>> {
     Ok(mensen_today_changed)
 }
 
-async fn json_to_meal(json_text: &str) -> MealsForDay {
+async fn json_to_meal(json_text: &str) -> Vec<MealGroup> {
     serde_json::from_str(json_text).unwrap()
 }
 

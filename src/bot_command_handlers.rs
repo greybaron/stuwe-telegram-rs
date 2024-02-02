@@ -32,7 +32,7 @@ use teloxide::{
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
-pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
+pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
     let keyboard = make_mensa_keyboard(mensen, false);
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
@@ -202,7 +202,7 @@ pub async fn subscribe(
 pub async fn change_mensa(
     bot: Bot,
     msg: Message,
-    mensen: BTreeMap<&str, u8>,
+    mensen: BTreeMap<u8, String>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {
