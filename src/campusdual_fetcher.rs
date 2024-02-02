@@ -99,21 +99,18 @@ pub async fn get_campusdual_data(
     let grade_resp = client
         .get("https://selfservice.campus-dual.de/acwork/index")
         .send()
-        .await?;
-    log::debug!("get exams: {}", grade_resp.status());
+        .await?
+        .error_for_status()?;
 
     let grades = extract_grades(grade_resp.text().await.unwrap()).await?;
 
     let exam_signup_resp = client
         .get("https://selfservice.campus-dual.de/acwork/expproc")
         .send()
-        .await
-        .unwrap();
+        .await?
+        .error_for_status()?;
 
-    println!("get exam reg options: {}", exam_signup_resp.status());
-
-    let signup_options =
-        extract_exam_registr_options(exam_signup_resp.text().await.unwrap()).await?;
+    let signup_options = extract_exam_registr_options(exam_signup_resp.text().await?).await?;
 
     Ok((grades, signup_options))
 }
@@ -221,8 +218,6 @@ async fn extract_exam_registr_options(html_text: String) -> Result<Vec<CampusDua
             verfahren: verfahren.to_string(),
             status: status.to_string(),
         });
-
-        // println!("{} ({}) — {}", status, verfahren, name);
     }
 
     Ok(signup_options)
