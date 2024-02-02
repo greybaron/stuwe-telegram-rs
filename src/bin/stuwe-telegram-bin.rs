@@ -99,10 +99,6 @@ async fn main() {
 
     let mensen = get_mensen().await;
     init_mensa_id_db(STUWE_DB, &mensen).unwrap();
-    match update_cache().await {
-        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
-        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
-    }
 
     // always update cache on startup
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
