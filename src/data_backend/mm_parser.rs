@@ -125,23 +125,21 @@ pub async fn mm_build_meal_msg(
     let day_meals = get_meals_from_db(requested_date, mensa_location, jwt_lock).await;
     let german_date = german_date_fmt(requested_date.date_naive());
 
-    // warn if requested "today" was raised to next monday (requested on sat/sun)
-    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
-        Some(" (Morgen)")
-    } else if days_forward == 0 && date_raised_by_days == 2 {
-        Some(" (Übermorgen)")
-    } else {
-        None
-    };
-
+    // start message formatting
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
-        "{} {}{} {}\n",
+        "{} {} {}\n",
         rand_emoji,
         markdown::italic(&german_date),
-        future_day_info.unwrap_or_default(),
-        rand_emoji
+        rand_emoji,
     );
+
+    // warn if requested "today" was raised to next monday (requested on sat/sun)
+    if days_forward == 0 && date_raised_by_days == 1 {
+        msg += &markdown::italic("      (Morgen)\n");
+    } else if days_forward == 0 && date_raised_by_days == 2 {
+        msg += &markdown::italic("      (Übermorgen)\n")
+    }
 
     match day_meals {
         Ok(meals) => {

@@ -7,7 +7,6 @@ use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
 use rusqlite::{params, Connection};
 use scraper::{Html, Selector};
-use selectors::{attr::CaseSensitivity, Element};
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
@@ -41,23 +40,20 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
     let day_meals = get_meals_from_db(requested_date, mensa_location).await;
 
     // start message formatting
-    // warn if requested "today" was raised to next monday (requested on sat/sun)
-    let future_day_info = if days_forward == 0 && date_raised_by_days == 1 {
-        Some(" (Morgen)")
-    } else if days_forward == 0 && date_raised_by_days == 2 {
-        Some(" (Übermorgen)")
-    } else {
-        None
-    };
-
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
-        "{} {}{} {}\n",
+        "{} {} {}\n",
         rand_emoji,
         markdown::italic(&day_meals.date),
-        future_day_info.unwrap_or_default(),
-        rand_emoji
+        rand_emoji,
     );
+
+    // warn if requested "today" was raised to next monday (requested on sat/sun)
+    if days_forward == 0 && date_raised_by_days == 1 {
+        msg += &markdown::italic("      (Morgen)\n");
+    } else if days_forward == 0 && date_raised_by_days == 2 {
+        msg += &markdown::italic("      (Übermorgen)\n")
+    }
 
     if day_meals.meal_groups.is_empty() {
         msg += &markdown::bold("\nkeine Daten vorhanden.\n");
@@ -124,25 +120,18 @@ async fn extract_data_from_html(
     requested_date: DateTime<Local>,
 ) -> Result<MealsForDay> {
     let now = Instant::now();
-    const FAIL: &str = "StuWe: unexpected meal format";
     let mut v_meal_groups: Vec<MealGroup> = Vec::new();
-
     let document = Html::parse_fragment(html_text);
 
-    // retrieving reported date and comparing to requested date
-    let date_sel = Selector::parse(r#"select#edit-date>option[selected='selected']"#).unwrap();
-    let received_date_human = document
-        .select(&date_sel)
+    let date_button_group_sel = Selector::parse(r#"button.date-button.is--active"#).unwrap();
+    let active_date_button = document
+        .select(&date_button_group_sel)
         .next()
-        .context("Recv. StuWe site is invalid (has no date)")?
-        .inner_html();
+        .context("Recv. StuWe site is invalid (has no date)")?;
 
-    let sub = received_date_human
-        .split(' ')
-        .nth(1)
-        .context("unexpected date format")?;
-    let received_date =
-        NaiveDate::parse_from_str(sub, "%d.%m.%Y").context("unexpected date format")?;
+    let received_date_str = active_date_button.attr("data-date").unwrap().to_owned();
+    let received_date = NaiveDate::parse_from_str(&received_date_str, "%Y-%m-%d")
+        .context("unexpected StuWe date format")?;
 
     // if received date != requested date -> return empty meals struct (isn't an error, just StuWe being weird)
     if received_date != requested_date.date_naive() {
@@ -152,85 +141,79 @@ async fn extract_data_from_html(
         });
     }
 
-    let container_sel = Selector::parse(r#"section.meals"#).unwrap();
-    let all_child_select = Selector::parse(r#":scope > *"#).unwrap();
+    let container_sel = Selector::parse(r#"div.meal-overview"#).unwrap();
+    let meal_sel = Selector::parse(r#"div.type--meal"#).unwrap();
 
     let container = document
         .select(&container_sel)
         .next()
         .context("StuWe site has no meal container")?;
 
-    for child in container.select(&all_child_select) {
-        if child
-            .value()
-            .has_class("title-prim", CaseSensitivity::CaseSensitive)
-        {
-            // title-prim == new group -> init new group struct
-            let mut meals_in_group: Vec<SingleMeal> = Vec::new();
+    let meal_type_sel = Selector::parse(r#"div.meal-tags>.tag"#).unwrap();
+    let title_sel = Selector::parse(r#"h4"#).unwrap();
+    let price_sel = Selector::parse(r#"div.meal-prices>span"#).unwrap();
+    let additional_ingredients_sel = Selector::parse(r#"div.meal-components"#).unwrap();
 
-            let mut next_sibling = child.next_sibling_element().context(FAIL)?;
+    // quick && dirty
+    for meal_element in container.select(&meal_sel) {
+        let meal_type = meal_element
+            .select(&meal_type_sel)
+            .next()
+            .context("meal category element not found")?
+            .inner_html();
 
-            // skip headlines (or other junk elements)
-            while !(next_sibling
-                .value()
-                .has_class("accordion", CaseSensitivity::CaseSensitive)
-                && next_sibling
-                    .value()
-                    .has_class("u-block", CaseSensitivity::CaseSensitive))
-            {
-                next_sibling = next_sibling.next_sibling_element().context(FAIL)?;
-            }
+        let title = meal_element
+            .select(&title_sel)
+            .next()
+            .context("meal title element not found")?
+            .inner_html();
 
-            // "next_sibling" is now of class ".accordion.u-block", aka. a group of 1 or more dishes
-            // -> looping over meals in group
-            for dish_element in next_sibling.select(&all_child_select) {
-                let mut additional_ingredients: Vec<String> = Vec::new();
-
-                // looping over meal ingredients
-                for add_ingred_element in
-                    dish_element.select(&Selector::parse(r#"details>ul>li"#).unwrap())
-                {
-                    additional_ingredients.push(add_ingred_element.inner_html());
-                }
-
-                // collecting into SingleMeal struct
-                let meal = SingleMeal {
-                    name: dish_element
-                        .select(&Selector::parse(r#"header>div>div>h4"#).unwrap())
-                        .next()
-                        .context(FAIL)?
-                        .inner_html(),
-                    additional_ingredients, //
-                    price: dish_element
-                        .select(&Selector::parse(r#"header>div>div>p"#).unwrap())
-                        .next()
-                        .context(FAIL)?
-                        .inner_html()
-                        .split('\n')
-                        .last()
-                        .context(FAIL)?
-                        .trim()
-                        .to_string(),
-                };
-
-                // pushing SingleMeal to meals struct
-                meals_in_group.push(meal);
-            }
-
-            // collecting into MealGroup struct
-            let meal_group = MealGroup {
-                meal_type: child.inner_html(),
-                sub_meals: meals_in_group,
+        let additional_ingredients =
+            if let Some(item) = meal_element.select(&additional_ingredients_sel).next() {
+                item.inner_html()
+                    .split('·')
+                    .map(|slice| slice.trim().to_string())
+                    .collect()
+            } else {
+                vec![]
             };
 
-            // pushing MealGroup to MealGroups struct
-            v_meal_groups.push(meal_group);
+        let mut price = String::new();
+        meal_element.select(&price_sel).for_each(|price_element| {
+            price += &price_element.inner_html();
+        });
+
+        // oh my
+        // oh my
+        match v_meal_groups
+            .iter_mut()
+            .find(|meal_group| meal_group.meal_type == meal_type)
+        {
+            None => {
+                // doesn't exist yet, create new meal group of new meal type
+                v_meal_groups.push(MealGroup {
+                    meal_type,
+                    sub_meals: vec![SingleMeal {
+                        name: title,
+                        price,
+                        additional_ingredients,
+                    }],
+                });
+            }
+            Some(meal_group) => {
+                // meal group of this type already exists, add meal to it
+                meal_group.sub_meals.push(SingleMeal {
+                    name: title,
+                    price,
+                    additional_ingredients,
+                });
+            }
         }
     }
 
     log::debug!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
     Ok(MealsForDay {
-        date: received_date_human,
+        date: german_date_fmt(received_date),
         meal_groups: v_meal_groups,
     })
 }
