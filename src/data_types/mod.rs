@@ -14,18 +14,6 @@ pub enum Backend {
     StuWe,
 }
 
-pub const MENSEN: [(&str, u8); 9] = [
-    ("Cafeteria Dittrichring", 153),
-    ("Mensaria am Botanischen Garten", 127),
-    ("Mensa Academica", 118),
-    ("Mensa am Park", 106),
-    ("Mensa am Elsterbecken", 115),
-    ("Mensa am Medizincampus", 162),
-    ("Mensa Peterssteinweg", 111),
-    ("Mensa Schönauer Straße", 140),
-    ("Mensa Tierklinik", 170),
-];
-
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
 pub const MM_DB: &str = "mensimates.sqlite";
 pub const STUWE_DB: &str = "stuwe.sqlite";

@@ -50,26 +50,18 @@ pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
 }
 
 pub fn make_mensa_keyboard(
-    mensen: BTreeMap<&str, u8>,
+    mensen: BTreeMap<u8, String>,
     only_mensa_upd: bool,
 ) -> InlineKeyboardMarkup {
-    // let subscribed_ids = [140, 108];
     let mut keyboard = Vec::new();
 
     for mensa in mensen {
-        // let button_text = format!("{} {}", subscribed_ids.contains(&mensa.1), mensa.0);
-        // if only_mensa_upd {
-        //     keyboard.push([InlineKeyboardButton::callback(
-        //         button_text,
-        //         format!("m_upd:{}", mensa.0),
-        //     )]);
-        // } else {
         keyboard.push([InlineKeyboardButton::callback(
-            mensa.0,
+            &mensa.1,
             format!(
                 "m_{}:{}",
                 if only_mensa_upd { "upd" } else { "regist" },
-                mensa.0
+                &mensa.1
             ),
         )]);
         // }
@@ -196,7 +188,7 @@ pub async fn callback_handler(
     jwt_lock: Option<Arc<RwLock<String>>>,
     bot: Bot,
     q: CallbackQuery,
-    mensen: BTreeMap<&str, u8>,
+    mensen: BTreeMap<u8, String>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
@@ -223,7 +215,7 @@ pub async fn callback_handler(
                     let text = build_meal_message_dispatcher(
                         backend,
                         0,
-                        *mensen.get(arg).unwrap(),
+                        *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         jwt_lock,
                     )
                     .await;
@@ -243,7 +235,7 @@ pub async fn callback_handler(
                     let task = JobHandlerTask {
                         job_type: JobType::UpdateRegistration,
                         chat_id: Some(chat.id.0),
-                        mensa_id: Some(*mensen.get(arg).unwrap()),
+                        mensa_id: Some(*mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0),
                         hour: None,
                         minute: None,
                         callback_id: Some(markup_id),
@@ -268,7 +260,7 @@ pub async fn callback_handler(
                     let text = build_meal_message_dispatcher(
                         backend,
                         0,
-                        *mensen.get(arg).unwrap(),
+                        *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         jwt_lock,
                     )
                     .await;
@@ -294,7 +286,7 @@ pub async fn callback_handler(
                     let task = JobHandlerTask {
                         job_type: JobType::Register,
                         chat_id: Some(chat.id.0),
-                        mensa_id: Some(*mensen.get(arg).unwrap()),
+                        mensa_id: Some(*mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0),
                         hour: Some(6),
                         minute: Some(0),
                         callback_id: Some(markup_id),

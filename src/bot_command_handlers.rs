@@ -2,10 +2,12 @@
 use crate::data_backend::mm_parser::get_jwt_token;
 use crate::data_types::{
     Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask,
-    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, TimeParseError, MENSEN,
-    MM_DB, NO_DB_MSG,
+    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, TimeParseError, MM_DB,
+    NO_DB_MSG,
 };
-use crate::db_operations::{get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row};
+use crate::db_operations::{
+    get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
+};
 use crate::shared_main::{
     build_meal_message_dispatcher, callback_handler, load_job, logger_init, make_days_keyboard,
     make_mensa_keyboard, make_query_data,
@@ -30,7 +32,7 @@ use teloxide::{
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
-pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<&str, u8>) -> HandlerResult {
+pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
     let keyboard = make_mensa_keyboard(mensen, false);
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
@@ -200,7 +202,7 @@ pub async fn subscribe(
 pub async fn change_mensa(
     bot: Bot,
     msg: Message,
-    mensen: BTreeMap<&str, u8>,
+    mensen: BTreeMap<u8, String>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {

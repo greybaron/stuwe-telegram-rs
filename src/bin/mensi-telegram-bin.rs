@@ -2,22 +2,20 @@ use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
 };
 use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
+use stuwe_telegram_rs::data_backend::stuwe_parser::get_mensen;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry, MENSEN, MM_DB, NO_DB_MSG,
+    QueryRegistrationType, RegistrationEntry, MM_DB, NO_DB_MSG,
 };
 use stuwe_telegram_rs::db_operations::{
-    check_or_create_db_tables, get_all_tasks_db, init_db_record, task_db_kill_auto, update_db_row,
+    check_or_create_db_tables, get_all_user_registrations_db, init_db_record, task_db_kill_auto,
+    update_db_row,
 };
 use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
 
 use clap::Parser;
 use log::log_enabled;
-use std::{
-    collections::{BTreeMap, HashMap},
-    sync::Arc,
-    time::Instant,
-};
+use std::{collections::HashMap, sync::Arc, time::Instant};
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -56,7 +54,8 @@ async fn main() {
         log::info!("Enable verbose logging for performance metrics");
     }
 
-    let mensen = BTreeMap::from(MENSEN);
+    let mensen = get_mensen().await;
+
     let jwt_lock: Arc<RwLock<String>> = Arc::new(RwLock::new(String::new()));
 
     check_or_create_db_tables(MM_DB);
@@ -147,7 +146,7 @@ async fn init_task_scheduler(
 ) {
     let backend = Backend::MensiMates;
     let registr_tx_loadjob = registration_tx.clone();
-    let tasks_from_db = get_all_tasks_db(MM_DB);
+    let tasks_from_db = get_all_user_registrations_db(MM_DB);
     let sched = JobScheduler::new().await.unwrap();
 
     // if mensimates, create job to reload token every minute

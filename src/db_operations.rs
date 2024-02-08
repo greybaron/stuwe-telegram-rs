@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use rusqlite::{params, Connection};
 
 use crate::data_types::{Backend, JobHandlerTask, JobType, MM_DB, STUWE_DB};
@@ -93,11 +95,24 @@ pub fn check_or_create_db_tables(sql_filename: &str) {
     .execute([])
     .unwrap();
 
-    // you guessed it
+    // table of all mensa names
+    conn.prepare(
+        "create table if not exists mensen (
+            mensa_id integer primary key,
+            mensa_name text not null unique
+        )",
+    )
+    .unwrap()
+    .execute([])
+    .unwrap();
+
+    // table of all meals
     conn.prepare(
         "create table if not exists meals (
-            mensa_and_date text unique,
-            json_text text
+            mensa_id integer,
+            date text,
+            json_text text,
+            foreign key (mensa_id) references mensen(mensa_id)
         )",
     )
     .unwrap()
@@ -105,7 +120,34 @@ pub fn check_or_create_db_tables(sql_filename: &str) {
     .unwrap();
 }
 
-pub fn get_all_tasks_db(sql_filename: &str) -> Vec<JobHandlerTask> {
+pub fn init_mensa_id_db(sql_filename: &str, mensen: &BTreeMap<u8, String>) -> rusqlite::Result<()> {
+    let conn = Connection::open(sql_filename)?;
+    let mut stmt = conn
+        .prepare_cached(
+            "replace into mensen (mensa_id, mensa_name)
+            values (?1, ?2)",
+        )
+        .unwrap();
+
+    for (id, name) in mensen.iter() {
+        stmt.execute(params![id.to_string(), name])?;
+    }
+
+    Ok(())
+}
+
+pub fn mensa_name_get_id_db(sql_filename: &str, mensa_name: &str) -> Option<u8> {
+    let conn = Connection::open(sql_filename).unwrap();
+    let mut stmt = conn
+        .prepare_cached("SELECT (mensa_id) FROM mensen WHERE mensa_name = ?1")
+        .unwrap();
+
+    let mut id_iter = stmt.query_map([mensa_name], |row| row.get(0)).unwrap();
+
+    id_iter.next().map(|row| row.unwrap())
+}
+
+pub fn get_all_user_registrations_db(sql_filename: &str) -> Vec<JobHandlerTask> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
     let conn = Connection::open(sql_filename).unwrap();
 

@@ -3,8 +3,8 @@ use thiserror::Error;
 
 // used for stuwe parser/message generator
 #[derive(Serialize, Deserialize, Debug)]
-pub struct MealsForDay {
-    pub date: String,
+pub struct DataForMensaForDay {
+    pub mensa_id: u8,
     pub meal_groups: Vec<MealGroup>,
 }
 
