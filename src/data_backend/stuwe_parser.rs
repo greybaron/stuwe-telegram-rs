@@ -110,10 +110,13 @@ async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> Vec<Me
 }
 
 async fn reqwest_get_html_text(date: &str) -> Result<String> {
+    let now = Instant::now();
     let url_base =
         "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?date=".to_string();
+    let txt = reqwest::get(url_base + date).await?.text().await?;
 
-    Ok(reqwest::get(url_base + date).await?.text().await?)
+    log::debug!("reqwest_get_html_text: {:.2?}", now.elapsed());
+    Ok(txt)
 }
 
 async fn extract_data_from_html(
