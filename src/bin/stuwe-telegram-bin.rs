@@ -381,7 +381,7 @@ async fn init_task_scheduler(
 
                     let new_uuid =
                         // new time was passed -> unload old job, load new
-                        if job_handler_task.hour.is_some() || job_handler_task.minute.is_some() {
+                        if job_handler_task.hour.is_some() || job_handler_task.minute.is_some() || job_handler_task.mensa_id.is_some() {
                             if let Some(uuid) = previous_registration.0 {
                                 // unload old job if exists
                                 sched.context.job_delete_tx.send(uuid).unwrap();
