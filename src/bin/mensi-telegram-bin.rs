@@ -1,5 +1,5 @@
 use stuwe_telegram_rs::bot_command_handlers::{
-    change_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
+    show_different_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
 };
 use stuwe_telegram_rs::data_backend::mm_parser::get_jwt_token;
 use stuwe_telegram_rs::data_backend::stuwe_parser::get_mensen;
@@ -111,11 +111,12 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
     let command_handler = teloxide::filter_command::<Command, _>()
         .branch(dptree::case![Command::Start].endpoint(start))
         .branch(dptree::case![Command::Heute].endpoint(day_cmd))
+        .branch(dptree::case![Command::Andere].endpoint(show_different_mensa))
         .branch(dptree::case![Command::Morgen].endpoint(day_cmd))
         .branch(dptree::case![Command::Uebermorgen].endpoint(day_cmd))
         .branch(dptree::case![Command::Subscribe].endpoint(subscribe))
         .branch(dptree::case![Command::Unsubscribe].endpoint(unsubscribe))
-        .branch(dptree::case![Command::Mensa].endpoint(change_mensa))
+        .branch(dptree::case![Command::Mensa].endpoint(show_different_mensa))
         .branch(dptree::case![Command::Uhrzeit].endpoint(start_time_dialogue));
 
     let message_handler = Update::filter_message()

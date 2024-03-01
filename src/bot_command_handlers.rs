@@ -1,9 +1,7 @@
 #![allow(unused_imports)]
 use crate::data_backend::mm_parser::get_jwt_token;
 use crate::data_types::{
-    Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask,
-    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, TimeParseError, MM_DB,
-    NO_DB_MSG,
+    Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType, MensaKeyboardAction, QueryRegistrationType, RegistrationEntry, TimeParseError, MM_DB, NO_DB_MSG
 };
 use crate::db_operations::{
     get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
@@ -33,7 +31,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
-    let keyboard = make_mensa_keyboard(mensen, false);
+    let keyboard = make_mensa_keyboard(mensen, MensaKeyboardAction::Register);
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
         .await?;
@@ -110,10 +108,6 @@ pub async fn day_cmd(
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
-        // registration_tx
-        //     .send(make_query_data(msg.chat.id.0))
-        //     .unwrap();
-        // let previous_markup_id = query_registration_rx.recv().await.unwrap().unwrap().4;
         let previous_markup_id = registration.4;
 
         let keyboard = make_days_keyboard(&bot, msg.chat.id.0, previous_markup_id).await;
@@ -199,7 +193,7 @@ pub async fn subscribe(
     Ok(())
 }
 
-pub async fn change_mensa(
+pub async fn show_different_mensa(
     bot: Bot,
     msg: Message,
     mensen: BTreeMap<u8, String>,
@@ -212,7 +206,7 @@ pub async fn change_mensa(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
     if query_registration_rx.recv().await.unwrap().is_some() {
-        let keyboard = make_mensa_keyboard(mensen, true);
+        let keyboard = make_mensa_keyboard(mensen, MensaKeyboardAction::DisplayOnce);
         bot.send_message(msg.chat.id, "Mensa auswählen:")
             .reply_markup(keyboard)
             .await?;

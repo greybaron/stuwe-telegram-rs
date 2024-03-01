@@ -24,6 +24,8 @@ pub enum Command {
     #[command(description = "Gerichte für heute")]
     Heute,
     #[command(description = "Gerichte für morgen\n")]
+    Andere,
+    #[command(description = "Andere Mensa abrufen\n")]
     Morgen,
     #[command(description = "off")]
     Uebermorgen,
@@ -58,6 +60,12 @@ pub type QueryRegistrationType = (
     broadcast::Sender<Option<RegistrationEntry>>,
     broadcast::Receiver<Option<RegistrationEntry>>,
 );
+
+pub enum MensaKeyboardAction {
+    Register,
+    Update,
+    DisplayOnce
+}
 
 // used internally for teloxide/Telegram bot
 #[derive(Debug, Clone)]

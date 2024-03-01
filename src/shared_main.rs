@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::{
     data_backend::{mm_parser::mm_build_meal_msg, stuwe_parser::stuwe_build_meal_msg},
-    data_types::{Backend, Command, NO_DB_MSG},
+    data_types::{Backend, Command, MensaKeyboardAction, NO_DB_MSG},
 };
 use crate::{
     data_types::{JobHandlerTask, JobType, RegistrationEntry},
@@ -51,7 +51,7 @@ pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
 
 pub fn make_mensa_keyboard(
     mensen: BTreeMap<u8, String>,
-    only_mensa_upd: bool,
+    action: MensaKeyboardAction,
 ) -> InlineKeyboardMarkup {
     let mut keyboard = Vec::new();
 
@@ -60,7 +60,11 @@ pub fn make_mensa_keyboard(
             &mensa.1,
             format!(
                 "m_{}:{}",
-                if only_mensa_upd { "upd" } else { "regist" },
+                match action {
+                    MensaKeyboardAction::Register => "regist",
+                    MensaKeyboardAction::Update => "upd",
+                    MensaKeyboardAction::DisplayOnce => "disp",
+                },
                 &mensa.1
             ),
         )]);
@@ -243,6 +247,23 @@ pub async fn callback_handler(
 
                     update_db_row(&task, backend).unwrap();
                     registration_tx.send(task).unwrap();
+                }
+                "m_disp" => {
+                    // replace mensa selection message with selected mensa, dont do anything else
+                    bot.edit_message_text(
+                        chat.id,
+                        id,
+                        build_meal_message_dispatcher(
+                            backend,
+                            0,
+                            *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
+                            jwt_lock,
+                        )
+                        .await,
+                    )
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await
+                    .unwrap();
                 }
                 "m_regist" => {
                     let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
