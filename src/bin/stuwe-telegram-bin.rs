@@ -1,5 +1,6 @@
 use stuwe_telegram_rs::bot_command_handlers::{
-    show_different_mensa, day_cmd, process_time_reply, start, start_time_dialogue, subscribe, unsubscribe,
+    day_cmd, process_time_reply, show_different_mensa, start, start_time_dialogue, subscribe,
+    unsubscribe,
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "campusdual")] {

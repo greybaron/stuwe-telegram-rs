@@ -1,7 +1,9 @@
 #![allow(unused_imports)]
 use crate::data_backend::mm_parser::get_jwt_token;
 use crate::data_types::{
-    Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType, MensaKeyboardAction, QueryRegistrationType, RegistrationEntry, TimeParseError, MM_DB, NO_DB_MSG
+    Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask,
+    JobHandlerTaskType, JobType, MensaKeyboardAction, QueryRegistrationType, RegistrationEntry,
+    TimeParseError, MM_DB, NO_DB_MSG,
 };
 use crate::db_operations::{
     get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,

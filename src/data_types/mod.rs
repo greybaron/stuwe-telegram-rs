@@ -64,7 +64,7 @@ pub type QueryRegistrationType = (
 pub enum MensaKeyboardAction {
     Register,
     Update,
-    DisplayOnce
+    DisplayOnce,
 }
 
 // used internally for teloxide/Telegram bot

@@ -249,10 +249,14 @@ pub async fn callback_handler(
                     registration_tx.send(task).unwrap();
                 }
                 "m_disp" => {
-                    // replace mensa selection message with selected mensa, dont do anything else
-                    bot.edit_message_text(
+                    // replace mensa selection message with selected mensa
+                    bot.edit_message_text(chat.id, id, format!("{}:", markdown::bold(arg)))
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .await
+                        .unwrap();
+
+                    bot.send_message(
                         chat.id,
-                        id,
                         build_meal_message_dispatcher(
                             backend,
                             0,
@@ -262,8 +266,7 @@ pub async fn callback_handler(
                         .await,
                     )
                     .parse_mode(ParseMode::MarkdownV2)
-                    .await
-                    .unwrap();
+                    .await?;
                 }
                 "m_regist" => {
                     let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
