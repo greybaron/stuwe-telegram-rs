@@ -403,13 +403,16 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
     // pass invalid date to get empty page (dont need actual data) with all mensa locations
     let html_text = reqwest_get_html_text("a").await.unwrap_or_default();
     let document = Html::parse_fragment(&html_text);
-    let mensa_list_sel = Selector::parse(r#"#content-header>.dropdown-pane>li"#).unwrap();
-    let mensa_item_sel = Selector::parse(r#"a"#).unwrap();
-    for header in document.select(&mensa_list_sel) {
-        if let Some(mensa_id) = header.value().attr("data-location") {
-            if let Some(mensa_name) = header.select(&mensa_item_sel).next() {
-                mensen.insert(mensa_id.parse::<u8>().unwrap(), mensa_name.inner_html());
+    let mensa_list_sel = Selector::parse("#locations>li").unwrap();
+    let mensa_item_sel = Selector::parse("span").unwrap();
+    for list_item in document.select(&mensa_list_sel) {
+        if let Some(mensa_id) = list_item.value().attr("data-location") {
+            if let Ok(mensa_id) = mensa_id.parse::<u8>() {
+                if let Some(mensa_name) = list_item.select(&mensa_item_sel).next() {
+                    mensen.insert(mensa_id, mensa_name.inner_html());
+                }
             }
+            
         }
     }
 
@@ -425,7 +428,7 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
                 (162, "Mensa am Medizincampus"),
                 (111, "Mensa Peterssteinweg"),
                 (140, "Mensa Schönauer Straße"),
-                (170, "Mensa Tierklinik"),
+                (170, "Mensa An den Tierklinik"),
             ]
             .map(|(id, name)| (id, name.to_string())),
         )
