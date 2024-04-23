@@ -43,20 +43,20 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 /// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
 /// {n}CampusDual support is enabled.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about)]
 
 struct Args {
     /// The telegram bot token to be used
-    #[arg(short, long)]
+    #[arg(short, long, env)]
     token: String,
-    #[arg(short, long, id = "CAMPUSDUAL-USER")]
+    #[arg(short, long, env = "CD_USER", id = "CAMPUSDUAL-USER")]
     user: String,
-    #[arg(short, long, id = "CD-PASSWORD")]
+    #[arg(short, long, env = "CD_PASSWORD", id = "CD-PASSWORD")]
     password: String,
     /// The Chat-ID which will receive CampusDual exam scores
-    #[arg(short, long)]
+    #[arg(short, long, env)]
     chatid: i64,
-    /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
+    /// enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
     #[arg(short, long)]
     verbose: bool,
 }
@@ -64,12 +64,12 @@ struct Args {
 /// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
 /// {n}CampusDual support is disabled.
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about)]
 struct Args {
     /// The telegram bot token to be used
-    #[arg(short, long)]
+    #[arg(short, long, env)]
     token: String,
-    /// enable verbose logging (mostly performance metrics){n}(overrides $RUST_LOG)
+    /// enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
     #[arg(short, long)]
     verbose: bool,
 }
