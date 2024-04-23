@@ -3,23 +3,10 @@ COPY ./src ./src
 COPY ./Cargo.lock .
 COPY ./Cargo.toml .
 
-# RUN adduser \
-#     --disabled-password \
-#     --gecos "" \
-#     --home "/nonexistent" \
-#     --shell "/sbin/nologin" \
-#     --no-create-home \
-#     --uid 10001 \
-#     "apiuser"
-
 RUN cargo build --release
 
+
 FROM debian:bookworm-slim
-# COPY --from=build /etc/passwd /etc/passwd
-# COPY --from=build /etc/group /etc/group
-
-# USER apiuser:apiuser
-
 RUN apt-get update && \
   apt-get install -y \
   libsqlite3-0 \
