@@ -24,9 +24,9 @@ pub enum Command {
     #[command(description = "Gerichte für heute")]
     Heute,
     #[command(description = "Gerichte für morgen\n")]
-    Andere,
-    #[command(description = "Andere Mensa abrufen\n")]
     Morgen,
+    #[command(description = "Andere Mensa abrufen\n")]
+    Andere,
     #[command(description = "off")]
     Uebermorgen,
     #[command(description = "automat. Nachrichten AN")]
