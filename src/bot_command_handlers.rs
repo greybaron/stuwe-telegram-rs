@@ -195,12 +195,13 @@ pub async fn subscribe(
     Ok(())
 }
 
-pub async fn show_different_mensa(
+async fn mensa_disp_or_upd(
     bot: Bot,
     msg: Message,
     mensen: BTreeMap<u8, String>,
     registration_tx: broadcast::Sender<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    disp_or_update: MensaKeyboardAction,
 ) -> HandlerResult {
     let mut query_registration_rx = query_registration_tx.subscribe();
 
@@ -208,7 +209,7 @@ pub async fn show_different_mensa(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
     if query_registration_rx.recv().await.unwrap().is_some() {
-        let keyboard = make_mensa_keyboard(mensen, MensaKeyboardAction::DisplayOnce);
+        let keyboard = make_mensa_keyboard(mensen, disp_or_update);
         bot.send_message(msg.chat.id, "Mensa auswählen:")
             .reply_markup(keyboard)
             .await?;
@@ -216,6 +217,42 @@ pub async fn show_different_mensa(
         bot.send_message(msg.chat.id, NO_DB_MSG).await?;
     }
     Ok(())
+}
+
+pub async fn change_mensa(
+    bot: Bot,
+    msg: Message,
+    mensen: BTreeMap<u8, String>,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+) -> HandlerResult {
+    mensa_disp_or_upd(
+        bot,
+        msg,
+        mensen,
+        registration_tx,
+        query_registration_tx,
+        MensaKeyboardAction::Update,
+    )
+    .await
+}
+
+pub async fn show_different_mensa(
+    bot: Bot,
+    msg: Message,
+    mensen: BTreeMap<u8, String>,
+    registration_tx: broadcast::Sender<JobHandlerTask>,
+    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
+) -> HandlerResult {
+    mensa_disp_or_upd(
+        bot,
+        msg,
+        mensen,
+        registration_tx,
+        query_registration_tx,
+        MensaKeyboardAction::DisplayOnce,
+    )
+    .await
 }
 
 pub async fn start_time_dialogue(

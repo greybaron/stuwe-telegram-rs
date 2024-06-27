@@ -412,7 +412,6 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
                     mensen.insert(mensa_id, mensa_name.inner_html());
                 }
             }
-            
         }
     }
 

@@ -1,6 +1,6 @@
 use stuwe_telegram_rs::bot_command_handlers::{
-    day_cmd, process_time_reply, show_different_mensa, start, start_time_dialogue, subscribe,
-    unsubscribe,
+    change_mensa, day_cmd, process_time_reply, show_different_mensa, start, start_time_dialogue,
+    subscribe, unsubscribe,
 };
 cfg_if::cfg_if! {
     if #[cfg(feature = "campusdual")] {
@@ -164,7 +164,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(dptree::case![Command::Uebermorgen].endpoint(day_cmd))
         .branch(dptree::case![Command::Subscribe].endpoint(subscribe))
         .branch(dptree::case![Command::Unsubscribe].endpoint(unsubscribe))
-        .branch(dptree::case![Command::Mensa].endpoint(show_different_mensa))
+        .branch(dptree::case![Command::Mensa].endpoint(change_mensa))
         .branch(dptree::case![Command::Uhrzeit].endpoint(start_time_dialogue));
 
     let message_handler = Update::filter_message()
