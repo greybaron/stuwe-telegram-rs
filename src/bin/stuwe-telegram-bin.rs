@@ -44,7 +44,6 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 /// {n}CampusDual support is enabled.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
-
 struct Args {
     /// The telegram bot token to be used
     #[arg(short, long, env)]
