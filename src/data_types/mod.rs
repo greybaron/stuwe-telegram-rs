@@ -95,4 +95,12 @@ pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option
 pub enum TimeParseError {
     #[error("Zeit konnte nicht gelesen werden")]
     InvalidTimePassed,
+    //     #[error("llama3-Error: {0}")]
+    //     Llama3Error(String),
 }
+
+// impl From<reqwest::Error> for TimeParseError {
+//     fn from(e: reqwest::Error) -> Self {
+//         TimeParseError::Llama3Error(e.to_string())
+//     }
+// }
