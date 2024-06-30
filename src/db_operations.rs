@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use rusqlite::{params, Connection};
 
-use crate::data_types::{Backend, JobHandlerTask, JobType, MM_DB, STUWE_DB};
+use crate::data_types::{Backend, JobHandlerTask, UpdateRegistrationTask, MM_DB, STUWE_DB};
 
 pub fn update_db_row(data: &JobHandlerTask, backend: Backend) -> rusqlite::Result<()> {
     let sql_filename = match backend {
@@ -159,14 +159,14 @@ pub fn get_all_user_registrations_db(sql_filename: &str) -> Vec<JobHandlerTask> 
 
     let job_iter = stmt
         .query_map([], |row| {
-            Ok(JobHandlerTask {
-                job_type: JobType::QueryRegistration,
+            Ok(UpdateRegistrationTask {
                 chat_id: row.get(0)?,
                 mensa_id: row.get(1)?,
                 hour: row.get(2)?,
                 minute: row.get(3)?,
                 callback_id: row.get(4)?,
-            })
+            }
+            .into())
         })
         .unwrap();
 

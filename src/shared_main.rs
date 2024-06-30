@@ -15,10 +15,13 @@ use uuid::Uuid;
 
 use crate::{
     data_backend::{mm_parser::mm_build_meal_msg, stuwe_parser::stuwe_build_meal_msg},
-    data_types::{Backend, Command, MensaKeyboardAction, NO_DB_MSG},
+    data_types::{
+        Backend, Command, InsertMarkupMessageIDTask, MensaKeyboardAction, QueryRegistrationTask,
+        RegisterTask, UpdateRegistrationTask, NO_DB_MSG,
+    },
 };
 use crate::{
-    data_types::{JobHandlerTask, JobType, RegistrationEntry},
+    data_types::{JobHandlerTask, RegistrationEntry},
     db_operations::update_db_row,
 };
 
@@ -39,14 +42,7 @@ pub fn logger_init(module_path: &str) {
 }
 
 pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
-    JobHandlerTask {
-        job_type: JobType::QueryRegistration,
-        chat_id: Some(chat_id),
-        mensa_id: None,
-        hour: None,
-        minute: None,
-        callback_id: None,
-    }
+    QueryRegistrationTask { chat_id }.into()
 }
 
 pub fn make_mensa_keyboard(
@@ -165,14 +161,11 @@ pub async fn load_job(
                     .0;
 
                 // send message callback id to store
-                let task = JobHandlerTask {
-                    job_type: JobType::InsertMarkupMessageID,
-                    chat_id: Some(task.chat_id.unwrap()),
-                    mensa_id: None,
-                    hour: None,
-                    minute: None,
-                    callback_id: Some(markup_id),
-                };
+                let task = InsertMarkupMessageIDTask {
+                    chat_id: task.chat_id.unwrap(),
+                    callback_id: markup_id,
+                }
+                .into();
 
                 update_db_row(&task, backend).unwrap();
                 registration_tx.send(task).unwrap();
@@ -236,14 +229,14 @@ pub async fn callback_handler(
                         .id
                         .0;
 
-                    let task = JobHandlerTask {
-                        job_type: JobType::UpdateRegistration,
-                        chat_id: Some(chat.id.0),
+                    let task = UpdateRegistrationTask {
+                        chat_id: chat.id.0,
                         mensa_id: Some(*mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0),
                         hour: None,
                         minute: None,
                         callback_id: Some(markup_id),
-                    };
+                    }
+                    .into();
 
                     update_db_row(&task, backend).unwrap();
                     registration_tx.send(task).unwrap();
@@ -307,14 +300,14 @@ pub async fn callback_handler(
                         .id
                         .0;
 
-                    let task = JobHandlerTask {
-                        job_type: JobType::Register,
-                        chat_id: Some(chat.id.0),
-                        mensa_id: Some(*mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0),
-                        hour: Some(6),
-                        minute: Some(0),
-                        callback_id: Some(markup_id),
-                    };
+                    let task = RegisterTask {
+                        chat_id: chat.id.0,
+                        mensa_id: *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
+                        hour: 6,
+                        minute: 0,
+                        callback_id: markup_id,
+                    }
+                    .into();
 
                     update_db_row(&task, backend).unwrap();
                     registration_tx.send(task).unwrap();
@@ -355,14 +348,11 @@ pub async fn callback_handler(
                             .0;
                         log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
 
-                        let task = JobHandlerTask {
-                            job_type: JobType::InsertMarkupMessageID,
-                            chat_id: Some(chat.id.0),
-                            mensa_id: None,
-                            hour: None,
-                            minute: None,
-                            callback_id: Some(markup_id),
-                        };
+                        let task = InsertMarkupMessageIDTask {
+                            chat_id: chat.id.0,
+                            callback_id: markup_id,
+                        }
+                        .into();
 
                         update_db_row(&task, backend).unwrap();
                         registration_tx.send(task).unwrap();

@@ -1,5 +1,5 @@
 use stuwe_telegram_rs::bot_command_handlers::{
-    change_mensa, day_cmd, process_time_reply, show_different_mensa, start, start_time_dialogue,
+    change_mensa, day_cmd, reply_time_dialogue, show_different_mensa, start, start_time_dialogue,
     subscribe, unsubscribe,
 };
 cfg_if::cfg_if! {
@@ -12,8 +12,9 @@ cfg_if::cfg_if! {
 
 use stuwe_telegram_rs::data_backend::stuwe_parser::{get_mensen, update_cache};
 use stuwe_telegram_rs::data_types::{
-    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry, NO_DB_MSG, STUWE_DB,
+    Backend, BroadcastUpdateTask, Command, DialogueState, HandlerResult, JobHandlerTask,
+    JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, NO_DB_MSG, OLLAMA_HOST,
+    STUWE_DB,
 };
 use stuwe_telegram_rs::db_operations::{
     check_or_create_db_tables, get_all_user_registrations_db, init_db_record, init_mensa_id_db,
@@ -55,9 +56,12 @@ struct Args {
     /// The Chat-ID which will receive CampusDual exam scores
     #[arg(short, long, env)]
     chatid: i64,
-    /// enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
+    /// Enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
     #[arg(short, long)]
     verbose: bool,
+    /// Ollama API host for AI time parsing bloatware{n}Example: 'http://127.0.0.1:11434/api'
+    #[arg(long, env = "OLLAMA_HOST")]
+    ollama_host: Option<String>,
 }
 #[cfg(not(feature = "campusdual"))]
 /// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
@@ -76,6 +80,7 @@ struct Args {
 #[tokio::main]
 async fn main() {
     let args = Args::parse();
+    OLLAMA_HOST.get_or_init(|| args.ollama_host);
 
     if args.verbose {
         std::env::set_var("RUST_LOG", "debug");
@@ -169,7 +174,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
 
     let message_handler = Update::filter_message()
         .branch(command_handler)
-        .branch(case![DialogueState::AwaitTimeReply].endpoint(process_time_reply))
+        .branch(case![DialogueState::AwaitTimeReply].endpoint(reply_time_dialogue))
         .branch(dptree::endpoint(invalid_cmd));
 
     let callback_query_handler = Update::filter_callback_query().endpoint(callback_handler);
@@ -210,24 +215,18 @@ async fn init_task_scheduler(
 
         Box::pin(async move {
             #[cfg(feature = "campusdual")]
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CmpDual");
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
             #[cfg(not(feature = "campusdual"))]
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
             let registration_tx = registration_tx.clone();
-            // let today_changed_mensen = update_cache(&mensen_ids).await?;
             match update_cache().await {
                 Ok(today_changed_mensen) => {
-                for mensa in today_changed_mensen {
+                for mensa_id in today_changed_mensen {
                     registration_tx
-                        .send(JobHandlerTask {
-                            job_type: JobType::BroadcastUpdate,
-                            chat_id: None,
-                            mensa_id: Some(mensa),
-                            hour: None,
-                            minute: None,
-                            callback_id: None,
-                        })
+                        .send(BroadcastUpdateTask {
+                            mensa_id,
+                        }.into())
                         .unwrap();
                 }
             },

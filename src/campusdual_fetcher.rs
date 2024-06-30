@@ -155,7 +155,7 @@ pub async fn compare_campusdual_signup_options(
             let mut f = File::create("signup_options.json").await.unwrap();
             let json_str = serde_json::to_string(recv_options).unwrap();
             f.write_all(json_str.as_bytes()).await.unwrap();
-            return Some(recv_options.to_vec());
+            return Some(recv_options.clone());
         }
     };
     let mut new_options = vec![];
@@ -194,7 +194,7 @@ async fn extract_exam_registr_options(html_text: String) -> Result<Vec<CampusDua
         let class = content.next().unwrap().text().next().unwrap();
         let verfahren = content.next().unwrap().text().next().unwrap(); // .inner_html();
 
-        let subline_selector = &Selector::parse(&format!(".child-of-{}", l_id)).unwrap();
+        let subline_selector = &Selector::parse(&format!(".child-of-{l_id}")).unwrap();
         let status_icon_url = table
             .select(subline_selector)
             .next()

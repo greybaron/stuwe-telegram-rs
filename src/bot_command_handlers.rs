@@ -1,9 +1,10 @@
 #![allow(unused_imports)]
 use crate::data_backend::mm_parser::get_jwt_token;
 use crate::data_types::{
-    Backend, Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask,
-    JobHandlerTaskType, JobType, MensaKeyboardAction, QueryRegistrationType, RegistrationEntry,
-    TimeParseError, MM_DB, NO_DB_MSG,
+    Backend, Command, DialogueState, DialogueType, HandlerResult, InsertMarkupMessageIDTask,
+    JobHandlerTask, JobHandlerTaskType, MensaKeyboardAction, ParsedTimeAndLastMsgFromDialleougueue,
+    QueryRegistrationType, RegistrationEntry, TimeParseError, UnregisterTask,
+    UpdateRegistrationTask, MM_DB, NO_DB_MSG, OLLAMA_HOST,
 };
 use crate::db_operations::{
     get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
@@ -13,11 +14,14 @@ use crate::shared_main::{
     make_mensa_keyboard, make_query_data,
 };
 
-use chrono::Datelike;
+use chrono::{Datelike, Timelike};
+use clap::Parser;
 use log::log_enabled;
 use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use static_init::dynamic;
+use std::env::args;
 use std::{
     collections::{BTreeMap, HashMap},
     sync::Arc,
@@ -67,14 +71,12 @@ pub async fn unsubscribe(
                 .await?;
 
             registration_tx
-                .send(JobHandlerTask {
-                    job_type: JobType::Unregister,
-                    chat_id: Some(msg.chat.id.0),
-                    mensa_id: None,
-                    hour: None,
-                    minute: None,
-                    callback_id: None,
-                })
+                .send(
+                    UnregisterTask {
+                        chat_id: msg.chat.id.0,
+                    }
+                    .into(),
+                )
                 .unwrap();
         }
     } else {
@@ -126,14 +128,11 @@ pub async fn day_cmd(
         log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
 
         // send message callback id to store
-        let task = JobHandlerTask {
-            job_type: JobType::InsertMarkupMessageID,
-            chat_id: Some(msg.chat.id.0),
-            mensa_id: None,
-            hour: None,
-            minute: None,
-            callback_id: Some(markup_id),
-        };
+        let task = InsertMarkupMessageIDTask {
+            chat_id: msg.chat.id.0,
+            callback_id: markup_id,
+        }
+        .into();
 
         // save to db
         update_db_row(&task, backend).unwrap();
@@ -179,14 +178,14 @@ pub async fn subscribe(
                     )
                     .await?;
 
-            let registration_job = JobHandlerTask {
-                job_type: JobType::UpdateRegistration,
-                chat_id: Some(msg.chat.id.0),
+            let registration_job = UpdateRegistrationTask {
+                chat_id: msg.chat.id.0,
                 mensa_id: None,
                 hour: Some(6),
                 minute: Some(0),
                 callback_id: None,
-            };
+            }
+            .into();
 
             registration_tx.send(registration_job).unwrap();
         }
@@ -270,41 +269,57 @@ pub async fn start_time_dialogue(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
 
-    if query_registration_rx.recv().await.unwrap().is_some() {
-        let argument = msg.text().unwrap_or_default().split(' ').nth(1);
-        let parsed_opt = argument.map(parse_time);
+    if query_registration_rx.recv().await.unwrap().is_none() {
+        bot.send_message(msg.chat.id, NO_DB_MSG).await.unwrap();
+        dialogue.exit().await.unwrap();
+        return Ok(());
+    }
+    let argument = msg
+        .text()
+        .unwrap_or_default()
+        .split_once(' ')
+        .map(|slices| slices.1.trim());
 
-        if parsed_opt.is_some() && parsed_opt.as_ref().unwrap().is_ok() {
-            let (hour, minute) = parsed_opt.unwrap().unwrap();
-            bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-            dialogue.exit().await.unwrap();
+    let parsed_time = match argument {
+        Some(arg) => parse_time_send_status_msgs(&bot, msg.chat.id, arg).await,
+        None => Err(TimeParseError::NoTimeArgPassed),
+    };
 
-            let registration_job = JobHandlerTask {
-                job_type: JobType::UpdateRegistration,
-                chat_id: Some(msg.chat.id.0),
+    match parsed_time {
+        Ok(parsed_thing) => {
+            let registration_job = UpdateRegistrationTask {
+                chat_id: msg.chat.id.0,
                 mensa_id: None,
-                hour: Some(hour),
-                minute: Some(minute),
+                hour: Some(parsed_thing.hour),
+                minute: Some(parsed_thing.minute),
                 callback_id: None,
-            };
+            }
+            .into();
+
             registration_tx.send(registration_job).unwrap();
-        } else {
+        }
+        Err(TimeParseError::NoTimeArgPassed) => {
             bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
                 .await
                 .unwrap();
+
             dialogue
                 .update(DialogueState::AwaitTimeReply)
                 .await
                 .unwrap();
-        };
-    } else {
-        bot.send_message(msg.chat.id, NO_DB_MSG).await.unwrap();
-        dialogue.exit().await.unwrap();
+        }
+        Err(_) => {
+            dialogue
+                .update(DialogueState::AwaitTimeReply)
+                .await
+                .unwrap();
+        }
     }
+
     Ok(())
 }
 
-pub async fn process_time_reply(
+pub async fn reply_time_dialogue(
     bot: Bot,
     msg: Message,
     dialogue: DialogueType,
@@ -324,93 +339,168 @@ pub async fn process_time_reply(
         return Ok(());
     }
 
-    if let Some(txt) = msg.text() {
-        match ai_parse_time(txt).await {
-            Ok((hour, minute)) => {
-                bot.send_message(msg.chat.id, format!("Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr gesendet.\n\n/unsubscribe zum Deaktivieren", hour, minute)).await?;
-                dialogue.exit().await.unwrap();
-
-                let registration_job = JobHandlerTask {
-                    job_type: JobType::UpdateRegistration,
-                    chat_id: Some(msg.chat.id.0),
-                    mensa_id: None,
-                    hour: Some(hour),
-                    minute: Some(minute),
-                    callback_id: None,
-                };
-                registration_tx.send(registration_job).unwrap();
-            }
-            Err(TimeParseError::InvalidTimePassed) => {
-                bot.send_message(
-                    msg.chat.id,
-                    "Eingegebene Zeit ist ungültig.\nBitte mit Uhrzeit antworten:",
-                )
-                .await?;
-            }
-        }
-    } else {
+    if msg.text().is_none() {
         bot.send_message(
             msg.chat.id,
             "Das ist kein Text.\nBitte mit Uhrzeit antworten:",
         )
         .await?;
-    };
+        return Ok(());
+    }
+
+    if let Ok(parsed_thing) =
+        parse_time_send_status_msgs(&bot, msg.chat.id, msg.text().unwrap()).await
+    {
+        dialogue.exit().await.unwrap();
+
+        let registration_job = UpdateRegistrationTask {
+            chat_id: msg.chat.id.0,
+            mensa_id: None,
+            hour: Some(parsed_thing.hour),
+            minute: Some(parsed_thing.minute),
+            callback_id: None,
+        }
+        .into();
+        registration_tx.send(registration_job).unwrap();
+    }
 
     Ok(())
 }
 
+async fn parse_time_send_status_msgs(
+    bot: &Bot,
+    chatid: ChatId,
+    txt: &str,
+) -> Result<ParsedTimeAndLastMsgFromDialleougueue, TimeParseError> {
+    if let Ok((hour, minute)) = rex_parse_time(txt) {
+        let msgtxt = format!(
+            "Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr \
+        gesendet.\n\n/unsubscribe zum Deaktivieren",
+            hour, minute
+        );
+
+        bot.send_message(chatid, msgtxt).await.unwrap();
+
+        Ok(ParsedTimeAndLastMsgFromDialleougueue {
+            hour,
+            minute,
+            msgid: None,
+        })
+    } else {
+        // try ai
+        let oracle_msgid = bot
+            .send_message(chatid, "Das Orakel wird befragt...")
+            .await
+            .unwrap()
+            .id;
+
+        let parse_result = ai_parse_time(txt).await;
+
+        match parse_result {
+            Ok(parsed) => {
+                let msgtxt = format!(
+                    "Plan wird ab jetzt automatisch an Wochentagen {:02}:{:02} Uhr \
+                gesendet.\n\n/unsubscribe zum Deaktivieren",
+                    parsed.0, parsed.1
+                );
+
+                bot.edit_message_text(chatid, oracle_msgid, msgtxt)
+                    .await
+                    .unwrap();
+
+                Ok(ParsedTimeAndLastMsgFromDialleougueue {
+                    hour: parsed.0,
+                    minute: parsed.1,
+                    msgid: Some(oracle_msgid),
+                })
+            }
+            // Err(TimeParseError::NoTimeArgPassed)
+            Err(TimeParseError::InvalidTimePassed) => {
+                bot.edit_message_text(chatid, oracle_msgid, "Das Orakel verharrt in Ungewissheit.")
+                    .await
+                    .unwrap();
+
+                Err(TimeParseError::InvalidTimePassed)
+            }
+            Err(TimeParseError::OllamaUnavailable) => {
+                bot.edit_message_text(
+                    chatid,
+                    oracle_msgid,
+                    "Das Orakel erhört unsere Bitten nicht.",
+                )
+                .await
+                .unwrap();
+
+                Err(TimeParseError::OllamaUnavailable)
+            }
+            Err(TimeParseError::OllamaUnconfigured) => {
+                bot.edit_message_text(
+                    chatid,
+                    oracle_msgid,
+                    "Eingegebene Zeit ist ungültig.\nBitte mit Uhrzeit antworten:",
+                )
+                .await
+                .unwrap();
+
+                Err(TimeParseError::OllamaUnconfigured)
+            }
+            Err(TimeParseError::NoTimeArgPassed) => {
+                unreachable!()
+            }
+        }
+    }
+}
 async fn ai_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
-    let week_days = ["Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag"];
-    let today = chrono::Local::now().date_naive();
-
     let prompt = format!(
-        "heute ist {}, der {}",
-        week_days[today.weekday().num_days_from_monday() as usize],
-        today
-    );
-    log::error!("{}", prompt);
-
-    let params = HashMap::from([("model", "llama3:latest"), ("prompt", &prompt)]);
+         "Finde die Zeitangabe. Antworte NUR 'HH:mm' ODER 'nicht vorhanden'. KEINE ERKLÄRUNG. Eingabe: #{}#",
+    txt
+        );
 
     let client = reqwest::Client::new();
+    let params = json!(
+        {
+            "model": "llama3:latest",
+            "prompt": &prompt,
+            "stream": false
+        }
+    );
+
+    let ollama_host = OLLAMA_HOST.get().unwrap();
+
+    if ollama_host.is_none() {
+        log::warn!("Ollama API is unconfigured, cannot fancy-parse time");
+        return Err(TimeParseError::OllamaUnconfigured);
+    }
+
+    log::info!("AI Query: '{}'", prompt);
+
     let res = client
-        .post("http://localhost:11434/api/generate")
-        .json(&params)
+        .post(format!("{}/generate", ollama_host.as_ref().unwrap()))
+        .body(params.to_string())
         .send()
         .await;
 
-    if let Ok(mut res) = res {
-        dbg!();
+    if let Ok(res) = res {
+        let txt = res.text().await.unwrap();
 
         #[derive(Serialize, Deserialize, Debug)]
-        struct LlamaChunk {
+        struct LlamaResponse {
             response: String,
             done: bool,
+            context: Vec<i64>,
         }
 
-        let mut ai_resp = "".to_string();
-        while let Some(chunk) = res.chunk().await.unwrap() {
-            match serde_json::from_slice::<LlamaChunk>(&chunk) {
-                Ok(value) => {
-                    if !value.done {
-                        ai_resp += &value.response;
-                    }
-                }
-                Err(e) => {
-                    log::warn!("AI respone aborted: {e}, falling back to REX");
-                    return parse_time(txt);
-                }
-            }
-        }
+        let struct_ai_resp: LlamaResponse = serde_json::from_str(&txt).unwrap();
 
-        parse_time(&ai_resp)
+        log::info!("AI Response: '{}'", struct_ai_resp.response);
+        rex_parse_time(&struct_ai_resp.response)
     } else {
-        log::warn!("Ollama 3 unavailable, falling back: {}", res.err().unwrap());
-        parse_time(txt)
+        log::warn!("Ollama API unavailable: {}", res.err().unwrap());
+        Err(TimeParseError::OllamaUnavailable)
     }
 }
 
-fn parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
+fn rex_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     #[dynamic]
     static RE: Regex = Regex::new("^([01]?[0-9]|2[0-3]):([0-5][0-9])").unwrap();
     if !RE.is_match(txt) {
