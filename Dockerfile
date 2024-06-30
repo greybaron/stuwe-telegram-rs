@@ -1,4 +1,4 @@
-FROM rust:bookworm as build
+FROM rust:bookworm AS build
 COPY ./src ./src
 COPY ./Cargo.lock .
 COPY ./Cargo.toml .

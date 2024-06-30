@@ -452,7 +452,7 @@ async fn parse_time_send_status_msgs(
 }
 async fn ai_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     let prompt = format!(
-         "Finde die Zeitangabe. Antworte NUR 'HH:mm' ODER 'nicht vorhanden'. KEINE ERKLÄRUNG. Eingabe: #{}#",
+         "Finde EINE Uhrzeit. Antworte NUR 'HH:mm' ODER 'nicht vorhanden'. KEINE ERKLÄRUNG. Eingabe: #{}#",
     txt
         );
 
