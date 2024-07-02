@@ -4,7 +4,7 @@ use crate::data_types::{
     Backend, Command, DialogueState, DialogueType, HandlerResult, InsertMarkupMessageIDTask,
     JobHandlerTask, JobHandlerTaskType, MensaKeyboardAction, ParsedTimeAndLastMsgFromDialleougueue,
     QueryRegistrationType, RegistrationEntry, TimeParseError, UnregisterTask,
-    UpdateRegistrationTask, MM_DB, NO_DB_MSG, OLLAMA_HOST,
+    UpdateRegistrationTask, MM_DB, NO_DB_MSG, OLLAMA_HOST, OLLAMA_MODEL,
 };
 use crate::db_operations::{
     get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
@@ -456,21 +456,23 @@ async fn ai_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     txt
         );
 
-    let client = reqwest::Client::new();
-    let params = json!(
-        {
-            "model": "llama3:latest",
-            "prompt": &prompt,
-            "stream": false
-        }
-    );
-
     let ollama_host = OLLAMA_HOST.get().unwrap();
+    let ollama_model = OLLAMA_MODEL.get().unwrap();
 
-    if ollama_host.is_none() {
+    if ollama_host.is_none() || ollama_model.is_none() {
         log::warn!("Ollama API is unconfigured, cannot fancy-parse time");
         return Err(TimeParseError::OllamaUnconfigured);
     }
+
+    let client = reqwest::Client::new();
+    let params = json!(
+        {
+            "model": ollama_model.as_ref().unwrap(),
+            "prompt": &prompt,
+            "stream": false,
+            "keep_alive": -1
+        }
+    );
 
     log::info!("AI Query: '{}'", prompt);
 
