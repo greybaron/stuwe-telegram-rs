@@ -14,7 +14,7 @@ use stuwe_telegram_rs::data_backend::stuwe_parser::{get_mensen, update_cache};
 use stuwe_telegram_rs::data_types::{
     Backend, BroadcastUpdateTask, Command, DialogueState, HandlerResult, JobHandlerTask,
     JobHandlerTaskType, JobType, QueryRegistrationType, RegistrationEntry, NO_DB_MSG, OLLAMA_HOST,
-    STUWE_DB,
+    OLLAMA_MODEL, STUWE_DB,
 };
 use stuwe_telegram_rs::db_operations::{
     check_or_create_db_tables, get_all_user_registrations_db, init_db_record, init_mensa_id_db,
@@ -62,6 +62,9 @@ struct Args {
     /// Ollama API host for AI time parsing bloatware{n}Example: 'http://127.0.0.1:11434/api'
     #[arg(long, env = "OLLAMA_HOST")]
     ollama_host: Option<String>,
+    /// Ollama model for inference{n}Example: 'llama3:latest'
+    #[arg(long, env = "OLLAMA_MODEL")]
+    ollama_model: Option<String>,
 }
 #[cfg(not(feature = "campusdual"))]
 /// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
@@ -81,6 +84,7 @@ struct Args {
 async fn main() {
     let args = Args::parse();
     OLLAMA_HOST.get_or_init(|| args.ollama_host);
+    OLLAMA_MODEL.get_or_init(|| args.ollama_model);
 
     if args.verbose {
         std::env::set_var("RUST_LOG", "debug");

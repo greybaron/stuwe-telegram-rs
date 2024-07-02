@@ -45,6 +45,7 @@ pub enum Command {
 }
 
 pub static OLLAMA_HOST: OnceLock<Option<String>> = OnceLock::new();
+pub static OLLAMA_MODEL: OnceLock<Option<String>> = OnceLock::new();
 
 #[derive(Clone, Default)]
 pub enum DialogueState {
