@@ -79,11 +79,19 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
+    //// Args setup
     let args = Args::parse();
     OLLAMA_HOST.get_or_init(|| args.ollama_host);
 
     if args.verbose {
         std::env::set_var("RUST_LOG", "debug");
+    }
+
+    logger_init(module_path!());
+    log::info!("Starting bot...");
+
+    if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
+        log::info!("Enable verbose logging for performance metrics");
     }
 
     #[cfg(feature = "campusdual")]
@@ -93,13 +101,7 @@ async fn main() {
         chat_id: args.chatid,
     };
 
-    logger_init(module_path!());
-    log::info!("Starting bot...");
-
-    if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
-        log::info!("Enable verbose logging for performance metrics");
-    }
-
+    //// DB setup
     check_or_create_db_tables(STUWE_DB);
 
     let mensen = get_mensen().await;
@@ -114,26 +116,23 @@ async fn main() {
 
     let bot = Bot::new(args.token);
 
-    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
+    let (job_handler_tx, job_handler_rx): JobHandlerTaskType = broadcast::channel(10);
     let (query_registration_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
-    let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
     {
         let bot = bot.clone();
         // there is effectively only one tx and rx, however since rx cant be passed as dptree dep (?!),
         // tx has to be cloned and passed to both (inside command_handler it will be resubscribed to rx)
-        let registration_tx = registration_tx.clone();
+        let job_handler_tx = job_handler_tx.clone();
         let query_registration_tx = query_registration_tx.clone();
-        // let mensen = mensen.clone();
         tokio::spawn(async move {
             log::info!("Starting task scheduler...");
             init_task_scheduler(
                 bot,
-                registration_tx,
-                job_rx,
+                job_handler_tx,
+                job_handler_rx,
                 query_registration_tx,
-                loaded_user_data,
                 #[cfg(feature = "campusdual")]
                 cd_data,
             )
@@ -145,7 +144,7 @@ async fn main() {
     let command_handler_deps = dptree::deps![
         InMemStorage::<DialogueState>::new(),
         mensen,
-        registration_tx,
+        job_handler_tx,
         query_registration_tx,
         Backend::StuWe,
         None::<Arc<RwLock<String>>>
@@ -190,21 +189,65 @@ async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
+async fn check_notify_campusdual_grades_signups(bot: &Bot, cd_data: CampusDualData) {
+    match get_campusdual_data(cd_data.username, cd_data.password).await {
+        Ok((grades, signup_options)) => {
+            if let Some(new_grades) = compare_campusdual_grades(&grades).await {
+                log::info!("Got new grades! Sending to {}", cd_data.chat_id);
+
+                let mut msg = String::from("Neue Note:");
+                for grade in new_grades {
+                    msg.push_str(&format!("\n{}: {}", grade.name, grade.grade));
+                }
+                match bot.send_message(ChatId(cd_data.chat_id), msg).await {
+                    Ok(_) => save_campusdual_grades(&grades).await,
+                    Err(e) => {
+                        log::error!("Failed to send CD grades: {}", e);
+                    }
+                }
+            }
+            if let Some(new_signup_options) = compare_campusdual_signup_options(&signup_options).await {
+                log::info!("Got new signup options! Sending to {}", cd_data.chat_id);
+
+                let mut msg = String::from("Neue Anmeldemöglichkeit:");
+                for signup_option in new_signup_options {
+                    msg.push_str(&format!("\n{} ({}) — {}", signup_option.status, signup_option.verfahren, signup_option.name));
+                }
+                match bot.send_message(ChatId(cd_data.chat_id), msg).await {
+                    Ok(_) => save_campusdual_signup_options(&signup_options).await,
+                    Err(e) => {
+                        log::error!("Failed to send CD signup options: {}", e);
+                    }
+                }
+            }
+        },
+        Err(e) => {
+            log::error!("Failed to get CD grades: {}", e);
+        }
+    }
+}
+
 async fn init_task_scheduler(
     bot: Bot,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
+    job_handler_tx: broadcast::Sender<JobHandlerTask>,
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
     query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    mut loaded_user_data: HashMap<i64, RegistrationEntry>,
     #[cfg(feature = "campusdual")] cd_data: CampusDualData,
 ) {
+    // job_handler_tx,
+    //             job_handler_rx,
+    //             query_registration_tx,
+
+
+
     let backend = Backend::StuWe;
-    let registr_tx_loadjob = registration_tx.clone();
+    
     let tasks_from_db = get_all_user_registrations_db(STUWE_DB);
+    let mut loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
     let sched = JobScheduler::new().await.unwrap();
 
     // run cache update every 5 minutes
-    let registration_tx_istg = registration_tx.clone();
+    let registration_tx_istg = job_handler_tx.clone();
     let bot_cdgrade = bot.clone();
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         let registration_tx = registration_tx_istg.clone();
@@ -237,41 +280,7 @@ async fn init_task_scheduler(
 
             cfg_if::cfg_if! {
                 if #[cfg(feature = "campusdual")] {
-                    match get_campusdual_data(cd_data.username, cd_data.password).await {
-                        Ok((grades, signup_options)) => {
-                            if let Some(new_grades) = compare_campusdual_grades(&grades).await {
-                                log::info!("Got new grades! Sending to {}", cd_data.chat_id);
-
-                                let mut msg = String::from("Neue Note:");
-                                for grade in new_grades {
-                                    msg.push_str(&format!("\n{}: {}", grade.name, grade.grade));
-                                }
-                                match bot_cdgrade.send_message(ChatId(cd_data.chat_id), msg).await {
-                                    Ok(_) => save_campusdual_grades(&grades).await,
-                                    Err(e) => {
-                                        log::error!("Failed to send CD grades: {}", e);
-                                    }
-                                }
-                            }
-                            if let Some(new_signup_options) = compare_campusdual_signup_options(&signup_options).await {
-                                log::info!("Got new signup options! Sending to {}", cd_data.chat_id);
-
-                                let mut msg = String::from("Neue Anmeldemöglichkeit:");
-                                for signup_option in new_signup_options {
-                                    msg.push_str(&format!("\n{} ({}) — {}", signup_option.status, signup_option.verfahren, signup_option.name));
-                                }
-                                match bot_cdgrade.send_message(ChatId(cd_data.chat_id), msg).await {
-                                    Ok(_) => save_campusdual_signup_options(&signup_options).await,
-                                    Err(e) => {
-                                        log::error!("Failed to send CD signup options: {}", e);
-                                    }
-                                }
-                            }
-                        },
-                        Err(e) => {
-                            log::error!("Failed to get CD grades: {}", e);
-                        }
-                    }
+                    check_notify_campusdual_grades_signups(&bot_cdgrade, cd_data).await;
                 }
             }
         })
@@ -279,6 +288,7 @@ async fn init_task_scheduler(
     .unwrap();
     sched.add(cache_and_broadcast_job).await.unwrap();
 
+    let registr_tx_loadjob = job_handler_tx.clone();
     for task in tasks_from_db {
         let bot = bot.clone();
         let registration_tx = registr_tx_loadjob.clone();
@@ -509,7 +519,7 @@ async fn init_task_scheduler(
                             };
 
                             update_db_row(&task, backend).unwrap();
-                            registration_tx.send(task).unwrap();
+                            job_handler_tx.send(task).unwrap();
                         }
                     }
                 }
