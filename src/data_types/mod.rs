@@ -77,7 +77,7 @@ pub enum MensaKeyboardAction {
 #[derive(Debug, Clone)]
 pub enum JobType {
     Register,
-    Unregister,
+    DeleteRegistration,
     QueryRegistration,
     UpdateRegistration,
     BroadcastUpdate,
@@ -120,7 +120,7 @@ pub struct UnregisterTask {
 impl From<UnregisterTask> for JobHandlerTask {
     fn from(job: UnregisterTask) -> Self {
         JobHandlerTask {
-            job_type: JobType::Unregister,
+            job_type: JobType::DeleteRegistration,
             chat_id: Some(job.chat_id),
             mensa_id: None,
             hour: None,
@@ -200,7 +200,15 @@ impl From<InsertMarkupMessageIDTask> for JobHandlerTask {
 }
 
 // opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
-pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<i32>);
+// pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<i32>);
+#[derive(Debug, Copy, Clone)]
+pub struct RegistrationEntry {
+    pub job_uuid: Option<Uuid>,
+    pub mensa_id: u8,
+    pub hour: Option<u32>,
+    pub minute: Option<u32>,
+    pub last_markup_id: Option<i32>,
+}
 
 #[derive(Error, Debug, Clone)]
 pub enum TimeParseError {
@@ -213,7 +221,7 @@ pub enum TimeParseError {
     #[error("Kein optionaler Zeitparam. bei Dialogstart")]
     NoTimeArgPassed,
 }
-
+#[derive(Debug, Clone)]
 pub struct ParsedTimeAndLastMsgFromDialleougueue {
     pub hour: u32,
     pub minute: u32,
