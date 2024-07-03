@@ -1,4 +1,6 @@
-use crate::bot_command_helpers::{mensa_disp_or_upd, parse_time_send_status_msgs};
+use crate::bot_command_helpers::{
+    mensa_disp_or_upd, parse_time_send_status_msgs, send_bloat_image,
+};
 use crate::data_types::{
     Backend, Command, DialogueState, DialogueType, HandlerResult, InsertMarkupMessageIDTask,
     JobHandlerTask, MensaKeyboardAction, RegistrationEntry, UnregisterTask, UpdateRegistrationTask,
@@ -8,6 +10,7 @@ use crate::db_operations::update_db_row;
 use crate::shared_main::{
     build_meal_message_dispatcher, make_days_keyboard, make_mensa_keyboard, make_query_data,
 };
+use rand::Rng;
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use teloxide::{prelude::*, types::ParseMode};
 use tokio::sync::{broadcast, RwLock};
@@ -118,6 +121,10 @@ pub async fn subscribe(
             .unwrap();
 
         if registration.job_uuid.is_some() {
+            if rand::thread_rng().gen_range(0..10) == 0 {
+                send_bloat_image(&bot, msg.chat.id).await;
+            }
+
             bot.send_message(
                 msg.chat.id,
                 "Automatische Nachrichten sind schon aktiviert.",
