@@ -15,7 +15,7 @@ use stuwe_telegram_rs::shared_main::{callback_handler, load_job, logger_init};
 
 use clap::Parser;
 use log::log_enabled;
-use std::{collections::HashMap, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -61,26 +61,26 @@ async fn main() {
     check_or_create_db_tables(MM_DB);
     let bot = Bot::new(args.token);
 
-    let (registration_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
-    let (query_registration_tx, _): QueryRegistrationType = broadcast::channel(10);
+    let (jobhandler_task_tx, job_rx): JobHandlerTaskType = broadcast::channel(10);
+    let (user_registration_data_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
-    let loaded_user_data: HashMap<i64, RegistrationEntry> = HashMap::new();
+    let loaded_user_data: BTreeMap<i64, RegistrationEntry> = BTreeMap::new();
     {
         let bot = bot.clone();
         // there is effectively only one tx and rx, however since rx cant be passed as dptree dep (?!),
         // tx has to be cloned and passed to both (inside command_handler it will be resubscribed to rx)
-        let registration_tx = registration_tx.clone();
-        let query_registration_tx = query_registration_tx.clone();
+        let jobhandler_task_tx = jobhandler_task_tx.clone();
+        let user_registration_data_tx = user_registration_data_tx.clone();
 
         let jwt_lock = jwt_lock.clone();
         tokio::spawn(async move {
             log::info!("Starting task scheduler...");
-            init_task_scheduler(
+            run_task_scheduler(
                 bot,
-                registration_tx,
+                jobhandler_task_tx,
                 job_rx,
-                query_registration_tx,
+                user_registration_data_tx,
                 loaded_user_data,
                 jwt_lock,
             )
@@ -88,12 +88,12 @@ async fn main() {
         });
     }
 
-    // passing a receiver doesnt work for some reason, so sending query_registration_tx and resubscribing to get rx
+    // passing a receiver doesnt work for some reason, so sending user_registration_data_tx and resubscribing to get rx
     let command_handler_deps = dptree::deps![
         InMemStorage::<DialogueState>::new(),
         mensen,
-        registration_tx,
-        query_registration_tx,
+        jobhandler_task_tx,
+        user_registration_data_tx,
         Backend::MensiMates,
         Some(jwt_lock)
     ];
@@ -137,16 +137,16 @@ async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
-async fn init_task_scheduler(
+async fn run_task_scheduler(
     bot: Bot,
-    registration_tx: broadcast::Sender<JobHandlerTask>,
+    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
     mut job_rx: broadcast::Receiver<JobHandlerTask>,
-    query_registration_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    mut loaded_user_data: HashMap<i64, RegistrationEntry>,
+    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
+    mut loaded_user_data: BTreeMap<i64, RegistrationEntry>,
     jwt_lock: Arc<RwLock<String>>,
 ) {
     let backend = Backend::MensiMates;
-    let registr_tx_loadjob = registration_tx.clone();
+    let registr_tx_loadjob = jobhandler_task_tx.clone();
     let tasks_from_db = get_all_user_registrations_db(MM_DB);
     let sched = JobScheduler::new().await.unwrap();
 
@@ -194,14 +194,14 @@ async fn init_task_scheduler(
 
     for task in tasks_from_db {
         let bot = bot.clone();
-        let registration_tx = registr_tx_loadjob.clone();
+        let jobhandler_task_tx = registr_tx_loadjob.clone();
 
         let uuid = load_job(
             bot,
             &sched,
             task.clone(),
-            registration_tx,
-            query_registration_tx.subscribe(),
+            jobhandler_task_tx,
+            user_registration_data_tx.subscribe(),
             Backend::MensiMates,
             Some(jwt_lock.clone()),
         )
@@ -231,7 +231,7 @@ async fn init_task_scheduler(
                 // creates a new row, or replaces every col with new values
                 init_db_record(&job_handler_task, MM_DB).unwrap();
 
-                let previous_callback_msg = if let Some(previous_registration) =
+                let last_markup_id = if let Some(previous_registration) =
                     loaded_user_data.get(&job_handler_task.chat_id.unwrap())
                 {
                     if let Some(uuid) = previous_registration.0 {
@@ -249,7 +249,7 @@ async fn init_task_scheduler(
                     &sched,
                     job_handler_task.clone(),
                     registr_tx_loadjob.clone(),
-                    query_registration_tx.subscribe(),
+                    user_registration_data_tx.subscribe(),
                     Backend::MensiMates,
                     Some(jwt_lock.clone()),
                 )
@@ -263,7 +263,7 @@ async fn init_task_scheduler(
                         job_handler_task.mensa_id.unwrap(),
                         job_handler_task.hour,
                         job_handler_task.minute,
-                        previous_callback_msg,
+                        last_markup_id,
                     ),
                 );
             }
@@ -304,7 +304,7 @@ async fn init_task_scheduler(
                                 &sched,
                                 new_job_task.clone(),
                                 registr_tx_loadjob.clone(),
-                                query_registration_tx.subscribe(),
+                                user_registration_data_tx.subscribe(),
                                 Backend::StuWe,
                                 None
                             ).await
@@ -328,7 +328,7 @@ async fn init_task_scheduler(
                 }
             }
 
-            JobType::Unregister => {
+            JobType::DeleteRegistration => {
                 log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Unregister: {}", &job_handler_task.chat_id.unwrap());
 
                 // unregister is only invoked if existence of job is guaranteed
@@ -343,7 +343,7 @@ async fn init_task_scheduler(
                     .send(previous_registration.0.unwrap())
                     .unwrap();
 
-                let previous_callback_id = if previous_registration.4.is_some() {
+                let last_markup_id = if previous_registration.4.is_some() {
                     previous_registration.4
                 } else {
                     None
@@ -357,7 +357,7 @@ async fn init_task_scheduler(
                         previous_registration.1,
                         None,
                         None,
-                        previous_callback_id,
+                        last_markup_id,
                     ),
                 );
 
@@ -372,7 +372,7 @@ async fn init_task_scheduler(
                     log::warn!(target: "stuwe_telegram_rs::TS::QueryReg", "chat_id {} has no registration", &job_handler_task.chat_id.unwrap());
                 }
 
-                query_registration_tx.send(uuid_opt.copied()).unwrap();
+                user_registration_data_tx.send(uuid_opt.copied()).unwrap();
             }
 
             JobType::InsertMarkupMessageID => {

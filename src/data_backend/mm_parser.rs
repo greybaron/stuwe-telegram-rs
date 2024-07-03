@@ -7,14 +7,14 @@ use tokio::sync::RwLock;
 
 use anyhow::{Context, Result};
 use std::sync::Arc;
-use std::{collections::HashMap, time::Instant};
+use std::{collections::BTreeMap, time::Instant};
 
 pub async fn get_jwt_token() -> Result<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(55))
         .build()?;
 
-    let json = HashMap::from([
+    let json = BTreeMap::from([
         ("apiUsername", "apiuser_telegram"),
         ("password", "telegrambesser"),
     ]);
@@ -51,7 +51,7 @@ fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (Str
         requested_date.day(),
     );
 
-    let mensen: HashMap<u8, &str> = HashMap::from([
+    let mensen: BTreeMap<u8, &str> = BTreeMap::from([
         (153, "cafeteria_dittrichring"),
         (127, "menseria_am_botanischen_garten"),
         (118, "mensa_academica"),
@@ -146,7 +146,7 @@ pub async fn mm_build_meal_msg(
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
-                let mut structured_day_meals: HashMap<String, Vec<MealGroup>> = HashMap::new();
+                let mut structured_day_meals: BTreeMap<String, Vec<MealGroup>> = BTreeMap::new();
 
                 // loop over meal groups
                 for meal in meals {
