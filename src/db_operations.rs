@@ -1,48 +1,32 @@
-use std::collections::BTreeMap;
-
 use rusqlite::{params, Connection};
+use std::{collections::BTreeMap, process::exit};
 
-use crate::data_types::{Backend, JobHandlerTask, UpdateRegistrationTask, MM_DB, STUWE_DB};
+use crate::{
+    constants::DB_FILENAME,
+    data_types::{JobHandlerTask, UpdateRegistrationTask},
+};
 
-pub fn update_db_row(data: &JobHandlerTask, backend: Backend) -> rusqlite::Result<()> {
-    let sql_filename = match backend {
-        Backend::MensiMates => MM_DB,
-        Backend::StuWe => STUWE_DB,
-    };
-    let conn = Connection::open(sql_filename)?;
+pub fn update_db_row(data: &JobHandlerTask) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
 
     // could be better but eh
-    let mut update_mensa_stmt = conn
-        .prepare_cached(
-            "UPDATE registrations
+    let mut update_mensa_stmt = conn.prepare_cached(
+        "UPDATE registrations
             SET mensa_id = ?2
             WHERE chat_id = ?1",
-        )
-        .unwrap();
+    )?;
 
-    let mut upd_hour_stmt = conn
-        .prepare_cached(
-            "UPDATE registrations
+    let mut upd_hour_stmt = conn.prepare_cached(
+        "UPDATE registrations
             SET hour = ?2
             WHERE chat_id = ?1",
-        )
-        .unwrap();
+    )?;
 
-    let mut upd_min_stmt = conn
-        .prepare_cached(
-            "UPDATE registrations
+    let mut upd_min_stmt = conn.prepare_cached(
+        "UPDATE registrations
             SET minute = ?2
             WHERE chat_id = ?1",
-        )
-        .unwrap();
-
-    let mut upd_cb_stmt = conn
-        .prepare_cached(
-            "UPDATE registrations
-            SET last_callback_id = ?2
-            WHERE chat_id = ?1",
-        )
-        .unwrap();
+    )?;
 
     if let Some(mensa_id) = data.mensa_id {
         update_mensa_stmt.execute(params![data.chat_id, mensa_id])?;
@@ -56,30 +40,28 @@ pub fn update_db_row(data: &JobHandlerTask, backend: Backend) -> rusqlite::Resul
         upd_min_stmt.execute(params![data.chat_id, minute])?;
     };
 
-    if let Some(callback_id) = data.callback_id {
-        upd_cb_stmt.execute([data.chat_id, Some(callback_id.into())])?;
-    };
-
     Ok(())
 }
 
-pub fn task_db_kill_auto(chat_id: i64, sql_filename: &str) -> rusqlite::Result<()> {
-    let conn = Connection::open(sql_filename)?;
-    let mut stmt = conn
-        .prepare_cached(
-            "UPDATE registrations
+pub fn task_db_kill_auto(chat_id: i64) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
+    let mut stmt = conn.prepare_cached(
+        "UPDATE registrations
             SET hour = NULL, minute = NULL
             WHERE chat_id = ?1",
-        )
-        .unwrap();
+    )?;
 
     stmt.execute(params![chat_id])?;
 
     Ok(())
 }
 
-pub fn check_or_create_db_tables(sql_filename: &str) {
-    let conn = Connection::open(sql_filename).unwrap();
+pub fn check_or_create_db_tables() -> rusqlite::Result<()> {
+    if DB_FILENAME.get().is_none() {
+        log::error!("DB_FILENAME not set");
+        exit(1);
+    }
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
 
     // ensure db table exists
     conn.prepare(
@@ -88,12 +70,9 @@ pub fn check_or_create_db_tables(sql_filename: &str) {
         mensa_id integer not null,
         hour integer,
         minute integer,
-        last_callback_id integer
         )",
-    )
-    .unwrap()
-    .execute([])
-    .unwrap();
+    )?
+    .execute([])?;
 
     // table of all mensa names
     conn.prepare(
@@ -101,10 +80,8 @@ pub fn check_or_create_db_tables(sql_filename: &str) {
             mensa_id integer primary key,
             mensa_name text not null unique
         )",
-    )
-    .unwrap()
-    .execute([])
-    .unwrap();
+    )?
+    .execute([])?;
 
     // table of all meals
     conn.prepare(
@@ -114,20 +91,18 @@ pub fn check_or_create_db_tables(sql_filename: &str) {
             json_text text,
             foreign key (mensa_id) references mensen(mensa_id)
         )",
-    )
-    .unwrap()
-    .execute([])
-    .unwrap();
+    )?
+    .execute([])?;
+
+    Ok(())
 }
 
-pub fn init_mensa_id_db(sql_filename: &str, mensen: &BTreeMap<u8, String>) -> rusqlite::Result<()> {
-    let conn = Connection::open(sql_filename)?;
-    let mut stmt = conn
-        .prepare_cached(
-            "replace into mensen (mensa_id, mensa_name)
+pub fn init_mensa_id_db(mensen: &BTreeMap<u8, String>) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
+    let mut stmt = conn.prepare_cached(
+        "replace into mensen (mensa_id, mensa_name)
             values (?1, ?2)",
-        )
-        .unwrap();
+    )?;
 
     for (id, name) in mensen.iter() {
         stmt.execute(params![id.to_string(), name])?;
@@ -136,58 +111,45 @@ pub fn init_mensa_id_db(sql_filename: &str, mensen: &BTreeMap<u8, String>) -> ru
     Ok(())
 }
 
-pub fn mensa_name_get_id_db(sql_filename: &str, mensa_name: &str) -> Option<u8> {
-    let conn = Connection::open(sql_filename).unwrap();
-    let mut stmt = conn
-        .prepare_cached("SELECT (mensa_id) FROM mensen WHERE mensa_name = ?1")
-        .unwrap();
+pub fn mensa_name_get_id_db(mensa_name: &str) -> rusqlite::Result<Option<u8>> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
+    let mut stmt = conn.prepare_cached("SELECT (mensa_id) FROM mensen WHERE mensa_name = ?1")?;
 
-    let mut id_iter = stmt.query_map([mensa_name], |row| row.get(0)).unwrap();
+    let mut id_iter = stmt.query_map([mensa_name], |row| row.get(0))?;
 
-    id_iter.next().map(|row| row.unwrap())
+    Ok(id_iter.next().map(|row| row.unwrap()))
 }
 
-pub fn get_all_user_registrations_db(sql_filename: &str) -> Vec<JobHandlerTask> {
+pub fn get_all_user_registrations_db() -> rusqlite::Result<Vec<JobHandlerTask>> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
-    let conn = Connection::open(sql_filename).unwrap();
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
 
-    let mut stmt = conn
-        .prepare_cached(
-            "SELECT chat_id, mensa_id, hour, minute, last_callback_id FROM registrations",
-        )
-        .unwrap();
+    let mut stmt =
+        conn.prepare_cached("SELECT chat_id, mensa_id, hour, minute FROM registrations")?;
 
-    let job_iter = stmt
-        .query_map([], |row| {
-            Ok(UpdateRegistrationTask {
-                chat_id: row.get(0)?,
-                mensa_id: row.get(1)?,
-                hour: row.get(2)?,
-                minute: row.get(3)?,
-                callback_id: row.get(4)?,
-            }
-            .into())
-        })
-        .unwrap();
+    let job_iter = stmt.query_map([], |row| {
+        Ok(UpdateRegistrationTask {
+            chat_id: row.get(0)?,
+            mensa_id: row.get(1)?,
+            hour: row.get(2)?,
+            minute: row.get(3)?,
+        }
+        .into())
+    })?;
 
     for job in job_iter {
         tasks.push(job.unwrap())
     }
 
-    tasks
+    Ok(tasks)
 }
 
-pub fn init_db_record(
-    job_handler_task: &JobHandlerTask,
-    sql_filename: &str,
-) -> rusqlite::Result<()> {
-    let conn = Connection::open(sql_filename)?;
-    let mut stmt = conn
-        .prepare_cached(
-            "replace into registrations (chat_id, mensa_id, hour, minute)
+pub fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
+    let mut stmt = conn.prepare_cached(
+        "replace into registrations (chat_id, mensa_id, hour, minute)
             values (?1, ?2, ?3, ?4)",
-        )
-        .unwrap();
+    )?;
 
     stmt.execute(params![
         job_handler_task.chat_id,
@@ -195,5 +157,32 @@ pub fn init_db_record(
         job_handler_task.hour.unwrap(),
         job_handler_task.minute.unwrap()
     ])?;
+
     Ok(())
+}
+
+pub async fn save_meal_to_db(date: &str, mensa: u8, json_text: &str) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
+    conn.execute(
+        "delete from meals where mensa_id = ?1 and date = ?2",
+        [mensa.to_string(), date.to_string()],
+    )?;
+
+    let mut stmt = conn.prepare_cached(
+        "insert into meals (mensa_id, date, json_text)
+            values (?1, ?2, ?3)",
+    )?;
+
+    stmt.execute(params![mensa, date, json_text])?;
+
+    Ok(())
+}
+
+pub async fn get_meal_from_db(date: &str, mensa: u8) -> rusqlite::Result<Option<String>> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
+    let mut stmt =
+        conn.prepare_cached("select json_text from meals where (mensa_id, date) = (?1, ?2)")?;
+    let mut rows = stmt.query([&mensa.to_string(), date])?;
+
+    Ok(rows.next().unwrap().map(|row| row.get(0).unwrap()))
 }

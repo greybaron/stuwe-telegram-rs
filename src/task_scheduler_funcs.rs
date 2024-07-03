@@ -7,7 +7,7 @@ use teloxide::{
     utils::markdown,
     Bot,
 };
-use tokio::sync::broadcast::{Receiver, Sender};
+use tokio::sync::broadcast::Sender;
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
@@ -15,15 +15,16 @@ use crate::{
         compare_campusdual_grades, compare_campusdual_signup_options, get_campusdual_data,
         save_campusdual_grades, save_campusdual_signup_options,
     },
+    constants::NO_DB_MSG,
     data_backend::stuwe_parser::update_cache,
     data_types::{
-        self, stuwe_data_types::CampusDualData, Backend, BroadcastUpdateTask, JobHandlerTask,
-        JobType, RegistrationEntry, NO_DB_MSG,
+        stuwe_data_types::CampusDualData, BroadcastUpdateTask, JobHandlerTask, JobType,
+        RegistrationEntry,
     },
     db_operations::{
         get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
     },
-    shared_main::{build_meal_message_dispatcher, load_job, make_days_keyboard},
+    shared_main::{build_meal_message_dispatcher, load_job},
 };
 
 pub async fn handle_add_registration_task(
@@ -32,24 +33,15 @@ pub async fn handle_add_registration_task(
     sched: &JobScheduler,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
     jobhandler_task_tx: Sender<JobHandlerTask>,
-    user_registration_data_rx: Receiver<Option<RegistrationEntry>>,
 ) {
     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Register: {} for Mensa {}", &job_handler_task.chat_id.unwrap(), &job_handler_task.mensa_id.unwrap());
     // creates a new row, or replaces every col with new values
-    // todo: make dynamic for mensi
-    init_db_record(&job_handler_task, crate::data_types::STUWE_DB).unwrap();
-
-    let last_markup_id = if let Some(previous_registration) =
-        loaded_user_data.get(&job_handler_task.chat_id.unwrap())
-    {
+    init_db_record(&job_handler_task).unwrap();
+    if let Some(previous_registration) = loaded_user_data.get(&job_handler_task.chat_id.unwrap()) {
         if let Some(uuid) = previous_registration.job_uuid {
             sched.context.job_delete_tx.send(uuid).unwrap();
         };
-
-        previous_registration.last_markup_id
-    } else {
-        None
-    };
+    }
 
     // get uuid (here guaranteed to be Some() since default is registration with job)
     let new_uuid = load_job(
@@ -57,8 +49,6 @@ pub async fn handle_add_registration_task(
         sched,
         job_handler_task.clone(),
         jobhandler_task_tx,
-        user_registration_data_rx,
-        Backend::StuWe,
         None,
     )
     .await;
@@ -71,7 +61,6 @@ pub async fn handle_add_registration_task(
             mensa_id: job_handler_task.mensa_id.unwrap(),
             hour: job_handler_task.hour,
             minute: job_handler_task.minute,
-            last_markup_id,
         },
     );
 }
@@ -82,7 +71,6 @@ pub async fn handle_update_registration_task(
     sched: &JobScheduler,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
     jobhandler_task_tx: Sender<JobHandlerTask>,
-    user_registration_data_rx: Receiver<Option<RegistrationEntry>>,
 ) {
     if let Some(mensa) = job_handler_task.mensa_id {
         log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
@@ -104,7 +92,6 @@ pub async fn handle_update_registration_task(
             mensa_id: Some(mensa_id),
             hour,
             minute,
-            callback_id: None,
         };
 
         let new_uuid =
@@ -120,8 +107,6 @@ pub async fn handle_update_registration_task(
                     sched,
                     new_job_task.clone(),
                     jobhandler_task_tx.clone(),
-                    user_registration_data_rx,
-                    Backend::StuWe,
                     None
                 ).await
             } else {
@@ -136,13 +121,11 @@ pub async fn handle_update_registration_task(
                 mensa_id,
                 hour,
                 minute,
-                last_markup_id: previous_registration.last_markup_id,
             },
         );
 
         // update any values that are to be changed, aka are Some()
-        // todo: mensi global static backend? public static void main string[] args
-        update_db_row(&job_handler_task, Backend::StuWe).unwrap();
+        update_db_row(&job_handler_task).unwrap();
     } else {
         log::error!("Tried to update non-existent job");
         bot.send_message(ChatId(job_handler_task.chat_id.unwrap()), NO_DB_MSG)
@@ -170,13 +153,6 @@ pub async fn handle_delete_registration_task(
         .send(previous_registration.job_uuid.unwrap())
         .unwrap();
 
-    //dbg
-    let last_markup_id = if previous_registration.last_markup_id.is_some() {
-        previous_registration.last_markup_id
-    } else {
-        None
-    };
-
     // kill uuid from this thing
     loaded_user_data.insert(
         job_handler_task.chat_id.unwrap(),
@@ -185,12 +161,12 @@ pub async fn handle_delete_registration_task(
             mensa_id: previous_registration.mensa_id,
             hour: None,
             minute: None,
-            last_markup_id,
+            // last_markup_id,
         },
     );
 
     // delete from db
-    task_db_kill_auto(job_handler_task.chat_id.unwrap(), data_types::STUWE_DB).unwrap();
+    task_db_kill_auto(job_handler_task.chat_id.unwrap()).unwrap();
 }
 
 pub async fn handle_query_registration_task(
@@ -213,7 +189,6 @@ pub async fn handle_broadcast_update_task(
     bot: &Bot,
     job_handler_task: JobHandlerTask,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
-    job_handler_tx: Sender<JobHandlerTask>,
 ) {
     log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
     for (chat_id, registration_data) in loaded_user_data {
@@ -234,48 +209,16 @@ pub async fn handle_broadcast_update_task(
                 let text = format!(
                     "{}\n{}",
                     &markdown::bold(&markdown::underline("Planänderung:")),
-                    build_meal_message_dispatcher(Backend::StuWe, 0, mensa_id, None).await
+                    build_meal_message_dispatcher(0, mensa_id, None).await
                 );
 
-                let last_markup_id = registration_data.last_markup_id;
-                let keyboard = make_days_keyboard(bot, *chat_id, last_markup_id).await;
-                let markup_id = bot
-                    .send_message(ChatId(*chat_id), text)
+                bot.send_message(ChatId(*chat_id), text)
                     .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(keyboard)
                     .await
-                    .unwrap()
-                    .id
-                    .0;
-
-                let task = JobHandlerTask {
-                    job_type: JobType::InsertMarkupMessageID,
-                    chat_id: Some(*chat_id),
-                    mensa_id: None,
-                    hour: None,
-                    minute: None,
-                    callback_id: Some(markup_id),
-                };
-
-                // todo: mensi global static backend? public static void main string[] args
-                update_db_row(&task, Backend::StuWe).unwrap();
-                job_handler_tx.send(task).unwrap();
+                    .unwrap();
             }
         }
     }
-}
-
-pub async fn db_insert_markup_id(
-    job_handler_task: JobHandlerTask,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
-) {
-    let mut regist = *loaded_user_data
-        .get(&job_handler_task.chat_id.unwrap())
-        .unwrap();
-
-    regist.last_markup_id = job_handler_task.callback_id;
-
-    loaded_user_data.insert(job_handler_task.chat_id.unwrap(), regist);
 }
 
 pub async fn start_mensacache_and_campusdual_job(
@@ -285,19 +228,13 @@ pub async fn start_mensacache_and_campusdual_job(
     cd_data: CampusDualData,
 ) {
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
-        // let jobhandler_task_tx = jobhandler_task_tx_istg.clone();
-
-        #[cfg(feature = "campusdual")]
         let cd_data = cd_data.clone();
 
         let bot = bot.clone();
         let job_handler_tx = job_handler_tx.clone();
 
         Box::pin(async move {
-            #[cfg(feature = "campusdual")]
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
-            #[cfg(not(feature = "campusdual"))]
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache");
 
             match update_cache().await {
                 Ok(today_changed_mensen) => {
@@ -312,11 +249,7 @@ pub async fn start_mensacache_and_campusdual_job(
                 }
             }
 
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "campusdual")] {
-                    check_notify_campusdual_grades_signups(bot, cd_data).await;
-                }
-            }
+            check_notify_campusdual_grades_signups(bot, cd_data).await;
         })
     })
     .unwrap();
@@ -371,24 +304,14 @@ pub async fn load_jobs_from_db(
     sched: &JobScheduler,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
     jobhandler_task_tx: Sender<JobHandlerTask>,
-    user_registration_data_tx: Sender<Option<RegistrationEntry>>,
 ) {
-    let tasks_from_db = get_all_user_registrations_db(data_types::STUWE_DB);
+    let tasks_from_db = get_all_user_registrations_db().unwrap();
 
     for task in tasks_from_db {
         let bot = bot.clone();
         let jobhandler_task_tx = jobhandler_task_tx.clone();
 
-        let uuid = load_job(
-            bot,
-            sched,
-            task.clone(),
-            jobhandler_task_tx,
-            user_registration_data_tx.subscribe(),
-            Backend::StuWe,
-            None,
-        )
-        .await;
+        let uuid = load_job(bot, sched, task.clone(), jobhandler_task_tx, None).await;
         loaded_user_data.insert(
             task.chat_id.unwrap(),
             RegistrationEntry {
@@ -396,7 +319,6 @@ pub async fn load_jobs_from_db(
                 mensa_id: task.mensa_id.unwrap(),
                 hour: task.hour,
                 minute: task.minute,
-                last_markup_id: task.callback_id,
             },
         );
     }

@@ -1,25 +1,23 @@
-cfg_if::cfg_if! {
-    if #[cfg(feature = "campusdual")] {
-        // GEANT_OV_RSA_CA_4_tcs-cert3.pem has to be properly set up in /etc/ssl/certs
-        use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
-    }
-}
+// GEANT_OV_RSA_CA_4_tcs-cert3.pem has to be properly set up, eg. in /etc/ssl/certs for Debian
+// (the container image already has it)
+use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
 
 use stuwe_telegram_rs::bot_command_handlers::{
-    change_mensa, day_cmd, reply_time_dialogue, show_different_mensa, start, start_time_dialogue,
-    subscribe, unsubscribe,
+    change_mensa, day_cmd, invalid_cmd, reply_time_dialogue, show_different_mensa, start,
+    start_time_dialogue, subscribe, unsubscribe,
 };
+use stuwe_telegram_rs::constants::{self, OLLAMA_HOST, OLLAMA_MODEL, STUWE_DB};
 use stuwe_telegram_rs::data_backend::stuwe_parser::{get_mensen, update_cache};
 use stuwe_telegram_rs::data_types::{
-    Backend, Command, DialogueState, HandlerResult, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry, OLLAMA_HOST, OLLAMA_MODEL, STUWE_DB,
+    Backend, Command, DialogueState, JobHandlerTask, JobHandlerTaskType, JobType,
+    QueryRegistrationType, RegistrationEntry,
 };
 use stuwe_telegram_rs::db_operations::{check_or_create_db_tables, init_mensa_id_db};
 use stuwe_telegram_rs::shared_main::{callback_handler, logger_init};
 use stuwe_telegram_rs::task_scheduler_funcs::{
-    db_insert_markup_id, handle_add_registration_task, handle_broadcast_update_task,
-    handle_delete_registration_task, handle_query_registration_task,
-    handle_update_registration_task, load_jobs_from_db, start_mensacache_and_campusdual_job,
+    handle_add_registration_task, handle_broadcast_update_task, handle_delete_registration_task,
+    handle_query_registration_task, handle_update_registration_task, load_jobs_from_db,
+    start_mensacache_and_campusdual_job,
 };
 
 use clap::Parser;
@@ -35,7 +33,6 @@ use teloxide::{
 use tokio::sync::{broadcast, RwLock};
 use tokio_cron_scheduler::JobScheduler;
 
-#[cfg(feature = "campusdual")]
 /// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
 /// {n}CampusDual support is enabled.
 #[derive(Parser, Debug)]
@@ -61,26 +58,15 @@ struct Args {
     #[arg(long, env = "OLLAMA_MODEL")]
     ollama_model: Option<String>,
 }
-#[cfg(not(feature = "campusdual"))]
-/// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
-/// {n}CampusDual support is disabled.
-#[derive(Parser, Debug)]
-#[command(author, version, about)]
-struct Args {
-    /// The telegram bot token to be used
-    #[arg(short, long, env)]
-    token: String,
-    /// enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
-    #[arg(short, long)]
-    verbose: bool,
-}
 
 #[tokio::main]
 async fn main() {
+    constants::DB_FILENAME.set(STUWE_DB).unwrap();
+
     //// Args setup
     let args = Args::parse();
-    OLLAMA_HOST.get_or_init(|| args.ollama_host);
-    OLLAMA_MODEL.get_or_init(|| args.ollama_model);
+    OLLAMA_HOST.set(args.ollama_host).unwrap();
+    OLLAMA_MODEL.set(args.ollama_model).unwrap();
 
     if args.verbose {
         std::env::set_var("RUST_LOG", "debug");
@@ -93,7 +79,6 @@ async fn main() {
         log::info!("Enable verbose logging for performance metrics");
     }
 
-    #[cfg(feature = "campusdual")]
     let cd_data = CampusDualData {
         username: args.user,
         password: args.password,
@@ -101,10 +86,10 @@ async fn main() {
     };
 
     //// DB setup
-    check_or_create_db_tables(STUWE_DB);
+    check_or_create_db_tables().unwrap();
 
     let mensen = get_mensen().await;
-    init_mensa_id_db(STUWE_DB, &mensen).unwrap();
+    init_mensa_id_db(&mensen).unwrap();
 
     // always update cache on startup
     log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
@@ -132,7 +117,6 @@ async fn main() {
                 jobhandler_task_tx,
                 jobhandler_task_rx,
                 user_registration_data_tx,
-                #[cfg(feature = "campusdual")]
                 cd_data,
             )
             .await;
@@ -150,7 +134,7 @@ async fn main() {
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
-        // .enable_ctrlc_handler()
+        .enable_ctrlc_handler()
         .build()
         .dispatch()
         .await;
@@ -182,18 +166,12 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(callback_query_handler)
 }
 
-async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
-    bot.send_message(msg.chat.id, "Das ist kein Befehl.")
-        .await?;
-    Ok(())
-}
-
 async fn run_task_scheduler(
     bot: Bot,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
     mut jobhandler_task_rx: broadcast::Receiver<JobHandlerTask>,
     user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    #[cfg(feature = "campusdual")] cd_data: CampusDualData,
+    cd_data: CampusDualData,
 ) {
     let sched = JobScheduler::new().await.unwrap();
 
@@ -206,7 +184,6 @@ async fn run_task_scheduler(
         &sched,
         &mut loaded_user_data,
         jobhandler_task_tx.clone(),
-        user_registration_data_tx.clone(),
     )
     .await;
 
@@ -225,7 +202,6 @@ async fn run_task_scheduler(
                     &sched,
                     &mut loaded_user_data,
                     jobhandler_task_tx.clone(),
-                    user_registration_data_tx.subscribe(),
                 )
                 .await;
             }
@@ -237,7 +213,6 @@ async fn run_task_scheduler(
                     &sched,
                     &mut loaded_user_data,
                     jobhandler_task_tx.clone(),
-                    user_registration_data_tx.subscribe(),
                 )
                 .await;
             }
@@ -257,18 +232,7 @@ async fn run_task_scheduler(
             }
 
             JobType::BroadcastUpdate => {
-                // let test = job_handler_tx;
-                handle_broadcast_update_task(
-                    &bot,
-                    job_handler_task,
-                    &mut loaded_user_data,
-                    jobhandler_task_tx.clone(),
-                )
-                .await;
-            }
-
-            JobType::InsertMarkupMessageID => {
-                db_insert_markup_id(job_handler_task, &mut loaded_user_data).await;
+                handle_broadcast_update_task(&bot, job_handler_task, &mut loaded_user_data).await;
             }
         }
     }

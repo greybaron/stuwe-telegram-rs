@@ -1,15 +1,13 @@
 use crate::bot_command_helpers::{
     mensa_disp_or_upd, parse_time_send_status_msgs, send_bloat_image,
 };
+use crate::constants::NO_DB_MSG;
 use crate::data_types::{
-    Backend, Command, DialogueState, DialogueType, HandlerResult, InsertMarkupMessageIDTask,
-    JobHandlerTask, MensaKeyboardAction, RegistrationEntry, UnregisterTask, UpdateRegistrationTask,
-    NO_DB_MSG,
+    Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask, MensaKeyboardAction,
+    RegistrationEntry, UnregisterTask, UpdateRegistrationTask,
 };
-use crate::db_operations::update_db_row;
-use crate::shared_main::{
-    build_meal_message_dispatcher, make_days_keyboard, make_mensa_keyboard, make_query_data,
-};
+
+use crate::shared_main::{build_meal_message_dispatcher, make_mensa_keyboard, make_query_data};
 use rand::Rng;
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 use teloxide::{prelude::*, types::ParseMode};
@@ -20,6 +18,13 @@ pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> Hand
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
         .await?;
+
+    Ok(())
+}
+
+pub async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
+    bot.send_message(msg.chat.id, "Das ist kein Befehl.")
+        .await?;
     Ok(())
 }
 
@@ -29,17 +34,15 @@ pub async fn day_cmd(
     cmd: Command,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
     user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    backend: Backend,
     jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> HandlerResult {
     let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-    // let bruh = user_registration_data_rx.recv().await.unwrap().unwrap();
 
     let days_forward = match cmd {
         Command::Heute => 0,
         Command::Morgen => 1,
         Command::Uebermorgen => 2,
-        _ => panic!(),
+        _ => unreachable!(),
     };
 
     let now = Instant::now();
@@ -49,33 +52,15 @@ pub async fn day_cmd(
 
     if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
         let text =
-            build_meal_message_dispatcher(backend, days_forward, registration.mensa_id, jwt_lock)
-                .await;
+            build_meal_message_dispatcher(days_forward, registration.mensa_id, jwt_lock).await;
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
-        let keyboard = make_days_keyboard(&bot, msg.chat.id.0, registration.last_markup_id).await;
-        let markup_id = bot
-            .send_message(msg.chat.id, text)
+        bot.send_message(msg.chat.id, text)
             .parse_mode(ParseMode::MarkdownV2)
-            .reply_markup(keyboard)
-            .await?
-            .id
-            .0;
+            .await?;
 
         log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
-
-        // send message callback id to store
-        let task = InsertMarkupMessageIDTask {
-            chat_id: msg.chat.id.0,
-            callback_id: markup_id,
-        }
-        .into();
-
-        // save to db
-        update_db_row(&task, backend).unwrap();
-        // update live state which sounds way cooler than btree
-        jobhandler_task_tx.send(task).unwrap();
     } else {
         // every user has a registration (starting the chat always calls /start)
         // if this is none, it most likely means the DB was wiped)
@@ -142,7 +127,6 @@ pub async fn subscribe(
                 mensa_id: None,
                 hour: Some(6),
                 minute: Some(0),
-                callback_id: None,
             }
             .into();
 
@@ -243,7 +227,6 @@ pub async fn start_time_dialogue(
                         mensa_id: None,
                         hour: Some(parsed_time.hour),
                         minute: Some(parsed_time.minute),
-                        callback_id: None,
                     }
                     .into(),
                 )
@@ -258,42 +241,6 @@ pub async fn start_time_dialogue(
                 .unwrap();
         }
     }
-
-    // let parsed_time = match argument {
-    //     Some(arg) => parse_time_send_status_msgs(&bot, msg.chat.id, arg).await,
-    //     None => Err(TimeParseError::NoTimeArgPassed),
-    // };
-
-    // match parsed_time {
-    //     Ok(parsed_thing) => {
-    //         let registration_job = UpdateRegistrationTask {
-    //             chat_id: msg.chat.id.0,
-    //             mensa_id: None,
-    //             hour: Some(parsed_thing.hour),
-    //             minute: Some(parsed_thing.minute),
-    //             callback_id: None,
-    //         }
-    //         .into();
-
-    //         jobhandler_task_tx.send(registration_job).unwrap();
-    //     }
-    //     Err(TimeParseError::NoTimeArgPassed) => {
-    //         bot.send_message(msg.chat.id, "Bitte mit Uhrzeit antworten:")
-    //             .await
-    //             .unwrap();
-
-    //         dialogue
-    //             .update(DialogueState::AwaitTimeReply)
-    //             .await
-    //             .unwrap();
-    //     }
-    //     Err(_) => {
-    //         dialogue
-    //             .update(DialogueState::AwaitTimeReply)
-    //             .await
-    //             .unwrap();
-    //     }
-    // }
 
     Ok(())
 }
@@ -323,7 +270,6 @@ pub async fn reply_time_dialogue(
             mensa_id: None,
             hour: Some(parsed_thing.hour),
             minute: Some(parsed_thing.minute),
-            callback_id: None,
         }
         .into();
         jobhandler_task_tx.send(registration_job).unwrap();

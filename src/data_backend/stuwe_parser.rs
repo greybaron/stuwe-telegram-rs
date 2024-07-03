@@ -3,13 +3,11 @@ use std::vec;
 
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{DataForMensaForDay, MealGroup, SingleMeal};
-use crate::data_types::STUWE_DB;
-use crate::db_operations::mensa_name_get_id_db;
+use crate::db_operations::{get_meal_from_db, mensa_name_get_id_db, save_meal_to_db};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
 use rand::Rng;
-use rusqlite::{params, Connection};
 use scraper::{ElementRef, Html, Selector};
 use selectors::Element;
 use teloxide::utils::markdown;
@@ -101,7 +99,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
 
 async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> Vec<MealGroup> {
     let date_str = build_date_string(requested_date);
-    let json_text = get_meal_from_db(&date_str, mensa).await;
+    let json_text = get_meal_from_db(&date_str, mensa).await.unwrap();
     if let Some(json_text) = json_text {
         json_to_meal(&json_text).await
     } else {
@@ -146,8 +144,6 @@ async fn extract_data_from_html(
     let container_sel = Selector::parse(r#"div.meal-overview"#).unwrap();
 
     let meal_containers: Vec<ElementRef> = document.select(&container_sel).collect();
-    // .collect()
-    // .context("StuWe site has no meal container")?;
     if meal_containers.is_empty() {
         return Err(anyhow!("StuWe site has no meal containers"));
     }
@@ -156,7 +152,7 @@ async fn extract_data_from_html(
         if let Some(mensa_title_element) = meal_container.prev_sibling_element() {
             let mensa_title = mensa_title_element.inner_html();
             let meals = extract_mealgroup_from_htmlcontainer(meal_container)?;
-            if let Some(mensa_id) = mensa_name_get_id_db(STUWE_DB, &mensa_title) {
+            if let Some(mensa_id) = mensa_name_get_id_db(&mensa_title)? {
                 all_data_for_day.push(DataForMensaForDay {
                     mensa_id,
                     meal_groups: meals,
@@ -246,34 +242,6 @@ fn extract_mealgroup_from_htmlcontainer(meal_container: ElementRef<'_>) -> Resul
     }
 
     Ok(v_meal_groups)
-}
-
-async fn save_meal_to_db(date: &str, mensa: u8, json_text: &str) {
-    let conn = Connection::open(STUWE_DB).unwrap();
-    conn.execute(
-        "delete from meals where mensa_id = ?1 and date = ?2",
-        [mensa.to_string(), date.to_string()],
-    )
-    .unwrap();
-
-    let mut stmt = conn
-        .prepare_cached(
-            "insert into meals (mensa_id, date, json_text)
-            values (?1, ?2, ?3)",
-        )
-        .unwrap();
-
-    stmt.execute(params![mensa, date, json_text]).unwrap();
-}
-
-async fn get_meal_from_db(date: &str, mensa: u8) -> Option<String> {
-    let conn = Connection::open(STUWE_DB).unwrap();
-    let mut stmt = conn
-        .prepare_cached("select json_text from meals where (mensa_id, date) = (?1, ?2)")
-        .unwrap();
-    let mut rows = stmt.query([&mensa.to_string(), date]).unwrap();
-
-    rows.next().unwrap().map(|row| row.get(0).unwrap())
 }
 
 fn build_date_string(requested_date: DateTime<Local>) -> String {
@@ -370,12 +338,10 @@ async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
     // serialize downloaded meals
     for mensa_data_for_day in all_data_for_day {
         let downloaded_json_text = serde_json::to_string(&mensa_data_for_day.meal_groups).unwrap();
-        let db_json_text = get_meal_from_db(&date_string, mensa_data_for_day.mensa_id)
-            .await
-            .unwrap_or_default();
+        let db_json_text = get_meal_from_db(&date_string, mensa_data_for_day.mensa_id).await?;
 
         // if downloaded meals are different from cached meals, update cache
-        if downloaded_json_text != db_json_text {
+        if db_json_text.is_none() || downloaded_json_text != db_json_text.unwrap() {
             log::debug!(
                 "updating cache: Mensa={} Date={}",
                 mensa_data_for_day.mensa_id,
@@ -386,7 +352,7 @@ async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
                 mensa_data_for_day.mensa_id,
                 &downloaded_json_text,
             )
-            .await;
+            .await?;
 
             if day.weekday() == chrono::Local::now().weekday() {
                 today_changed_mensen_ids.push(mensa_data_for_day.mensa_id);
@@ -416,7 +382,7 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
     }
 
     if mensen.is_empty() {
-        log::error!("Failed to load mensen from stuwe, falling back");
+        log::warn!("Failed to load mensen from stuwe, falling back");
         BTreeMap::from(
             [
                 (153, "Cafeteria Dittrichring"),

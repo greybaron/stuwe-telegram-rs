@@ -1,6 +1,7 @@
+use crate::constants::{NO_DB_MSG, OLLAMA_HOST, OLLAMA_MODEL};
 use crate::data_types::{
     HandlerResult, JobHandlerTask, MensaKeyboardAction, ParsedTimeAndLastMsgFromDialleougueue,
-    RegistrationEntry, TimeParseError, NO_DB_MSG, OLLAMA_HOST, OLLAMA_MODEL,
+    RegistrationEntry, TimeParseError,
 };
 
 use crate::shared_main::{make_mensa_keyboard, make_query_data};
@@ -93,7 +94,6 @@ pub async fn parse_time_send_status_msgs(
                     msgid: Some(oracle_msgid),
                 })
             }
-            // Err(TimeParseError::NoTimeArgPassed)
             Err(TimeParseError::InvalidTimePassed) => {
                 bot.edit_message_text(
                     chatid,

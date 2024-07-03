@@ -1,8 +1,6 @@
 pub mod mm_data_types;
 pub mod stuwe_data_types;
 
-use std::sync::OnceLock;
-
 use teloxide::{
     dispatching::dialogue::InMemStorage, prelude::Dialogue, types::MessageId,
     utils::command::BotCommands,
@@ -16,10 +14,6 @@ pub enum Backend {
     MensiMates,
     StuWe,
 }
-
-pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
-pub const MM_DB: &str = "mensimates.sqlite";
-pub const STUWE_DB: &str = "stuwe.sqlite";
 
 #[derive(BotCommands, Clone, Debug, PartialEq)]
 #[command(rename_rule = "lowercase")]
@@ -43,9 +37,6 @@ pub enum Command {
     #[command(description = "off")]
     Start,
 }
-
-pub static OLLAMA_HOST: OnceLock<Option<String>> = OnceLock::new();
-pub static OLLAMA_MODEL: OnceLock<Option<String>> = OnceLock::new();
 
 #[derive(Clone, Default)]
 pub enum DialogueState {
@@ -81,7 +72,6 @@ pub enum JobType {
     QueryRegistration,
     UpdateRegistration,
     BroadcastUpdate,
-    InsertMarkupMessageID,
 }
 
 #[derive(Debug, Clone)]
@@ -91,7 +81,6 @@ pub struct JobHandlerTask {
     pub mensa_id: Option<u8>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
-    pub callback_id: Option<i32>,
 }
 
 pub struct RegisterTask {
@@ -99,7 +88,6 @@ pub struct RegisterTask {
     pub mensa_id: u8,
     pub hour: u32,
     pub minute: u32,
-    pub callback_id: i32,
 }
 impl From<RegisterTask> for JobHandlerTask {
     fn from(job: RegisterTask) -> Self {
@@ -109,7 +97,6 @@ impl From<RegisterTask> for JobHandlerTask {
             mensa_id: Some(job.mensa_id),
             hour: Some(job.hour),
             minute: Some(job.minute),
-            callback_id: Some(job.callback_id),
         }
     }
 }
@@ -125,7 +112,6 @@ impl From<UnregisterTask> for JobHandlerTask {
             mensa_id: None,
             hour: None,
             minute: None,
-            callback_id: None,
         }
     }
 }
@@ -141,7 +127,6 @@ impl From<QueryRegistrationTask> for JobHandlerTask {
             mensa_id: None,
             hour: None,
             minute: None,
-            callback_id: None,
         }
     }
 }
@@ -151,7 +136,6 @@ pub struct UpdateRegistrationTask {
     pub mensa_id: Option<u8>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
-    pub callback_id: Option<i32>,
 }
 impl From<UpdateRegistrationTask> for JobHandlerTask {
     fn from(job: UpdateRegistrationTask) -> Self {
@@ -161,7 +145,6 @@ impl From<UpdateRegistrationTask> for JobHandlerTask {
             mensa_id: job.mensa_id,
             hour: job.hour,
             minute: job.minute,
-            callback_id: job.callback_id,
         }
     }
 }
@@ -177,37 +160,16 @@ impl From<BroadcastUpdateTask> for JobHandlerTask {
             mensa_id: Some(job.mensa_id),
             hour: None,
             minute: None,
-            callback_id: None,
         }
     }
 }
 
-pub struct InsertMarkupMessageIDTask {
-    pub chat_id: i64,
-    pub callback_id: i32,
-}
-impl From<InsertMarkupMessageIDTask> for JobHandlerTask {
-    fn from(job: InsertMarkupMessageIDTask) -> Self {
-        JobHandlerTask {
-            job_type: JobType::InsertMarkupMessageID,
-            chat_id: Some(job.chat_id),
-            mensa_id: None,
-            hour: None,
-            minute: None,
-            callback_id: Some(job.callback_id),
-        }
-    }
-}
-
-// opt (job uuid), mensa id, opt(hour), opt(min), opt(callback message id)
-// pub type RegistrationEntry = (Option<Uuid>, u8, Option<u32>, Option<u32>, Option<i32>);
 #[derive(Debug, Copy, Clone)]
 pub struct RegistrationEntry {
     pub job_uuid: Option<Uuid>,
     pub mensa_id: u8,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
-    pub last_markup_id: Option<i32>,
 }
 
 #[derive(Error, Debug, Clone)]
@@ -227,9 +189,3 @@ pub struct ParsedTimeAndLastMsgFromDialleougueue {
     pub minute: u32,
     pub msgid: Option<MessageId>,
 }
-
-// impl From<reqwest::Error> for TimeParseError {
-//     fn from(e: reqwest::Error) -> Self {
-//         TimeParseError::Llama3Error(e.to_string())
-//     }
-// }

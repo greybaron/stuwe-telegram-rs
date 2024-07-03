@@ -3,10 +3,11 @@ use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant};
 use chrono::Timelike;
 use teloxide::{
     prelude::*,
+    types::{KeyboardButton, KeyboardMarkup},
     utils::{command::BotCommands, markdown},
 };
 use teloxide_core::{
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, MessageId, ParseMode},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ParseMode},
     Bot,
 };
 use tokio::sync::{broadcast, RwLock};
@@ -14,10 +15,11 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
 use crate::{
+    constants::{BACKEND, NO_DB_MSG},
     data_backend::{mm_parser::mm_build_meal_msg, stuwe_parser::stuwe_build_meal_msg},
     data_types::{
-        Backend, Command, InsertMarkupMessageIDTask, MensaKeyboardAction, QueryRegistrationTask,
-        RegisterTask, UpdateRegistrationTask, NO_DB_MSG,
+        Backend, Command, MensaKeyboardAction, QueryRegistrationTask, RegisterTask,
+        UpdateRegistrationTask,
     },
 };
 use crate::{
@@ -69,32 +71,27 @@ pub fn make_mensa_keyboard(
     InlineKeyboardMarkup::new(keyboard)
 }
 
-pub async fn make_days_keyboard(
-    bot: &Bot,
-    chat_id: i64,
-    last_markup_id: Option<i32>,
-) -> InlineKeyboardMarkup {
-    if let Some(id) = last_markup_id {
-        _ = bot
-            .edit_message_reply_markup(ChatId(chat_id), MessageId(id))
-            .await;
-    };
-
-    let keyboard = vec![vec![
-        InlineKeyboardButton::callback("Heute", "day:0"),
-        InlineKeyboardButton::callback("Morgen", "day:1"),
-        InlineKeyboardButton::callback("Überm.", "day:2"),
-    ]];
-    InlineKeyboardMarkup::new(keyboard)
+pub fn make_commands_keyrow() -> KeyboardMarkup {
+    let keyboard = vec![
+        vec![
+            KeyboardButton::new("/heute"),
+            KeyboardButton::new("/morgen"),
+            KeyboardButton::new("/uebermorgen"),
+        ],
+        vec![
+            KeyboardButton::new("/andere"),
+            KeyboardButton::new("/mensa"),
+        ],
+    ];
+    KeyboardMarkup::new(keyboard).resize_keyboard(true)
 }
 
 pub async fn build_meal_message_dispatcher(
-    backend: Backend,
     days_forward: i64,
     mensa_location: u8,
     jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> String {
-    match backend {
+    match BACKEND.get().unwrap() {
         Backend::MensiMates => {
             mm_build_meal_msg(days_forward, mensa_location, jwt_lock.unwrap()).await
         }
@@ -107,9 +104,7 @@ pub async fn load_job(
     sched: &JobScheduler,
     task: JobHandlerTask,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_rx: broadcast::Receiver<Option<RegistrationEntry>>,
     // jwt_lock is only used for mensimates
-    backend: Backend,
     jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> Option<Uuid> {
     // return if no time is set
@@ -137,43 +132,19 @@ pub async fn load_job(
 
             let bot = bot.clone();
             let jobhandler_task_tx = jobhandler_task_tx.clone();
-            let mut user_registration_data_rx = user_registration_data_rx.resubscribe();
 
             Box::pin(async move {
                 jobhandler_task_tx
                     .send(make_query_data(task.chat_id.unwrap()))
                     .unwrap();
-                let last_markup_id = user_registration_data_rx
-                    .recv()
-                    .await
-                    .unwrap()
-                    .unwrap()
-                    .last_markup_id;
 
-                let keyboard =
-                    make_days_keyboard(&bot, task.chat_id.unwrap(), last_markup_id).await;
-                let markup_id = bot
-                    .send_message(
-                        ChatId(task.chat_id.unwrap()),
-                        build_meal_message_dispatcher(backend, 0, task.mensa_id.unwrap(), jwt_lock)
-                            .await,
-                    )
-                    .parse_mode(ParseMode::MarkdownV2)
-                    .reply_markup(keyboard)
-                    .await
-                    .unwrap()
-                    .id
-                    .0;
-
-                // send message callback id to store
-                let task = InsertMarkupMessageIDTask {
-                    chat_id: task.chat_id.unwrap(),
-                    callback_id: markup_id,
-                }
-                .into();
-
-                update_db_row(&task, backend).unwrap();
-                jobhandler_task_tx.send(task).unwrap();
+                bot.send_message(
+                    ChatId(task.chat_id.unwrap()),
+                    build_meal_message_dispatcher(0, task.mensa_id.unwrap(), jwt_lock).await,
+                )
+                .parse_mode(ParseMode::MarkdownV2)
+                .await
+                .unwrap();
             })
         },
     )
@@ -186,7 +157,6 @@ pub async fn load_job(
 }
 
 pub async fn callback_handler(
-    backend: Backend,
     jwt_lock: Option<Arc<RwLock<String>>>,
     bot: Bot,
     q: CallbackQuery,
@@ -215,7 +185,6 @@ pub async fn callback_handler(
                     .unwrap();
 
                     let text = build_meal_message_dispatcher(
-                        backend,
                         0,
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         jwt_lock,
@@ -223,32 +192,20 @@ pub async fn callback_handler(
                     .await;
 
                     jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let last_markup_id = user_registration_data_rx
-                        .recv()
-                        .await
-                        .unwrap()
-                        .unwrap()
-                        .last_markup_id;
 
-                    let keyboard = make_days_keyboard(&bot, chat.id.0, last_markup_id).await;
-                    let markup_id = bot
-                        .send_message(chat.id, text)
+                    bot.send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(keyboard)
-                        .await?
-                        .id
-                        .0;
+                        .await?;
 
                     let task = UpdateRegistrationTask {
                         chat_id: chat.id.0,
                         mensa_id: Some(*mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0),
                         hour: None,
                         minute: None,
-                        callback_id: Some(markup_id),
                     }
                     .into();
 
-                    update_db_row(&task, backend).unwrap();
+                    update_db_row(&task).unwrap();
                     jobhandler_task_tx.send(task).unwrap();
                 }
                 "m_disp" => {
@@ -261,7 +218,6 @@ pub async fn callback_handler(
                     bot.send_message(
                         chat.id,
                         build_meal_message_dispatcher(
-                            backend,
                             0,
                             *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                             jwt_lock,
@@ -281,11 +237,12 @@ pub async fn callback_handler(
                     )
                     .await?;
 
-                    bot.send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
-                    .parse_mode(ParseMode::MarkdownV2).await?;
+                    bot
+                        .send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(make_commands_keyrow()).await?;
 
                     let text = build_meal_message_dispatcher(
-                        backend,
                         0,
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         jwt_lock,
@@ -293,33 +250,20 @@ pub async fn callback_handler(
                     .await;
 
                     jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let previous_registration = user_registration_data_rx.recv().await.unwrap();
-                    let last_markup_id = if let Some(previous_registration) = previous_registration
-                    {
-                        previous_registration.last_markup_id
-                    } else {
-                        None
-                    };
 
-                    let keyboard = make_days_keyboard(&bot, chat.id.0, last_markup_id).await;
-                    let markup_id = bot
-                        .send_message(chat.id, text)
+                    bot.send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(keyboard)
-                        .await?
-                        .id
-                        .0;
+                        .await?;
 
                     let task = RegisterTask {
                         chat_id: chat.id.0,
                         mensa_id: *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         hour: 6,
                         minute: 0,
-                        callback_id: markup_id,
                     }
                     .into();
 
-                    update_db_row(&task, backend).unwrap();
+                    update_db_row(&task).unwrap();
                     jobhandler_task_tx.send(task).unwrap();
                 }
                 "day" => {
@@ -334,7 +278,6 @@ pub async fn callback_handler(
                             [usize::try_from(days_forward).unwrap()];
 
                         let text = build_meal_message_dispatcher(
-                            backend,
                             days_forward,
                             prev_registration.mensa_id,
                             jwt_lock,
@@ -344,34 +287,11 @@ pub async fn callback_handler(
                         let now = Instant::now();
 
                         jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
-                        let last_markup_id = user_registration_data_rx
-                            .recv()
-                            .await
-                            .unwrap()
-                            .unwrap()
-                            .last_markup_id;
 
-                        let keyboard = make_days_keyboard(&bot, chat.id.0, last_markup_id).await;
-                        let markup_id = bot
-                            .send_message(chat.id, text)
+                        bot.send_message(chat.id, text)
                             .parse_mode(ParseMode::MarkdownV2)
-                            .reply_markup(keyboard)
-                            .await?
-                            .id
-                            .0;
+                            .await?;
                         log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
-
-                        let task = InsertMarkupMessageIDTask {
-                            chat_id: chat.id.0,
-                            callback_id: markup_id,
-                        }
-                        .into();
-
-                        update_db_row(&task, backend).unwrap();
-                        jobhandler_task_tx.send(task).unwrap();
-
-                        // also try to remove answered query anyway, as a fallback (the more the merrier)
-                        _ = bot.edit_message_reply_markup(chat.id, id).await;
                     } else {
                         bot.send_message(chat.id, NO_DB_MSG).await?;
                     }
