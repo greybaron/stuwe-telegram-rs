@@ -9,6 +9,7 @@ use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use static_init::dynamic;
+use teloxide::types::InputFile;
 
 use std::collections::BTreeMap;
 use teloxide::prelude::*;
@@ -197,4 +198,9 @@ fn rex_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
 
         Ok((hour, minute))
     }
+}
+
+pub async fn send_bloat_image(bot: &Bot, chatid: ChatId) {
+    let img = InputFile::file("documentation.jpeg");
+    bot.send_photo(chatid, img).await.unwrap();
 }
