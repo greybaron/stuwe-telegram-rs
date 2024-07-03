@@ -1,101 +1,50 @@
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
-use crate::data_types::mm_data_types::MealGroup;
+use crate::data_types::mm_data_types::{GetMensasMensa, MensiMeal};
+
+use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
 use rand::Rng;
-use teloxide::utils::markdown;
-use tokio::sync::RwLock;
-
-use anyhow::{Context, Result};
-use std::sync::Arc;
 use std::{collections::BTreeMap, time::Instant};
+use teloxide::utils::markdown;
 
-pub async fn get_jwt_token() -> Result<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(55))
-        .build()?;
-
-    let json = BTreeMap::from([
-        ("apiUsername", "apiuser_telegram"),
-        ("password", "telegrambesser"),
-    ]);
-
-    client
-        .post("https://api.olech2412.de/mensaHub/auth/login")
-        .json(&json)
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await
-        .context("JWT request returned no text")
-}
-
-async fn mm_json_request(
-    day: DateTime<Local>,
-    mensa_id: u8,
-    jwt_lock: Arc<RwLock<String>>,
-) -> Result<String, reqwest::Error> {
-    let (date, mensa) = build_url_params(day, mensa_id);
-
-    let req_now = Instant::now();
-    let mm_json = get_mensimates_json(&mensa, &date, jwt_lock).await;
-    log::debug!("got MM data after {:.2?}", req_now.elapsed());
-
-    mm_json
-}
-
-fn build_url_params(requested_date: DateTime<Local>, mensa_location: u8) -> (String, String) {
-    let (year, month, day) = (
-        requested_date.year(),
-        requested_date.month(),
-        requested_date.day(),
-    );
-
-    let mensen: BTreeMap<u8, &str> = BTreeMap::from([
-        (153, "cafeteria_dittrichring"),
-        (127, "menseria_am_botanischen_garten"),
-        (118, "mensa_academica"),
-        (106, "mensa_am_park"),
-        (115, "mensa_am_elsterbecken"),
-        (162, "mensa_am_medizincampus"),
-        (111, "mensa_peterssteinweg"),
-        (140, "mensa_schoenauerstr"),
-        (170, "mensa_tierklinik"),
-    ]);
-
-    let date = format!("{:04}-{:02}-{:02}", year, month, day);
-    let mensa = mensen.get(&mensa_location).unwrap().to_string();
-
-    (date, mensa)
-}
-
-async fn get_mensimates_json(
-    mensa: &str,
-    date: &str,
-    jwt_lock: Arc<RwLock<String>>,
-) -> Result<String, reqwest::Error> {
+pub async fn get_mensen() -> Result<BTreeMap<u8, String>> {
+    let mut mensen = BTreeMap::new();
     let client = reqwest::Client::new();
+    let res = client
+        .get("https://api.olech2412.de/mensaHub/mensa/getMensas")
+        .send()
+        .await?;
+    for mensa in res.json::<Vec<GetMensasMensa>>().await? {
+        mensen.insert(mensa.id, mensa.name);
+    }
 
-    let token = jwt_lock.read().await.clone();
+    Ok(mensen)
+}
 
-    let response = client
+async fn mm_get_meals_at_mensa_at_day(
+    date: &DateTime<Local>,
+    mensa_id: u8,
+) -> Result<Vec<MensiMeal>> {
+    let client = reqwest::Client::new();
+    let date_str = format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
+
+    let now = Instant::now();
+
+    let resp = client
         .get(format!(
-            "https://api.olech2412.de/mensaHub/{}/servingDate/{}",
-            mensa, date
+            "https://api.olech2412.de/mensaHub/meal/servingDate/{}/fromMensa/{}",
+            date_str, mensa_id
         ))
-        .bearer_auth(&token)
         .send()
         .await?
         .error_for_status()?;
 
-    response.text().await
+    log::debug!("MensiMates response: {:.2?}", now.elapsed());
+
+    Ok(resp.json::<Vec<MensiMeal>>().await?)
 }
 
-pub async fn mm_build_meal_msg(
-    days_forward: i64,
-    mensa_location: u8,
-    jwt_lock: Arc<RwLock<String>>,
-) -> String {
+pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
     // all nows & .elapsed() are for performance metrics
@@ -122,7 +71,7 @@ pub async fn mm_build_meal_msg(
     log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
-    let day_meals = get_meals_from_db(requested_date, mensa_location, jwt_lock).await;
+    let day_meals = mm_get_meals_at_mensa_at_day(&requested_date, mensa_location).await;
     let german_date = german_date_fmt(requested_date.date_naive());
 
     // start message formatting
@@ -146,7 +95,7 @@ pub async fn mm_build_meal_msg(
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
-                let mut structured_day_meals: BTreeMap<String, Vec<MealGroup>> = BTreeMap::new();
+                let mut structured_day_meals: BTreeMap<String, Vec<MensiMeal>> = BTreeMap::new();
 
                 // loop over meal groups
                 for meal in meals {
@@ -175,9 +124,10 @@ pub async fn mm_build_meal_msg(
 
                     for meal in meals_in_group {
                         msg += &format!(" • {}\n", markdown::underline(&meal.name));
+
                         let sub_ingredients = &meal
                             .description
-                            .split('&')
+                            .split('·')
                             .map(|x| x.trim())
                             .collect::<Vec<&str>>();
                         for ingr in sub_ingredients {
@@ -203,20 +153,4 @@ pub async fn mm_build_meal_msg(
     }
 
     escape_markdown_v2(&msg)
-}
-
-async fn get_meals_from_db(
-    requested_date: DateTime<Local>,
-    mensa_location: u8,
-    jwt_lock: Arc<RwLock<String>>,
-) -> Result<Vec<MealGroup>, reqwest::Error> {
-    let mm_json = mm_json_request(requested_date, mensa_location, jwt_lock).await;
-
-    match mm_json {
-        Ok(text) => {
-            let day_meal_groups: Vec<MealGroup> = serde_json::from_str(&text).unwrap();
-            Ok(day_meal_groups)
-        }
-        Err(e) => Err(e),
-    }
 }

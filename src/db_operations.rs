@@ -69,7 +69,7 @@ pub fn check_or_create_db_tables() -> rusqlite::Result<()> {
         chat_id integer not null unique primary key,
         mensa_id integer not null,
         hour integer,
-        minute integer,
+        minute integer
         )",
     )?
     .execute([])?;

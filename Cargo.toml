@@ -8,9 +8,9 @@ default-run = "stuwe-telegram-rs"
 name = "stuwe-telegram-rs"
 path = "src/bin/stuwe-telegram-bin.rs"
 
-# [[bin]]
-# name = "mensi-telegram-rs"
-# path = "src/bin/mensi-telegram-bin.rs"
+[[bin]]
+name = "mensi-telegram-rs"
+path = "src/bin/mensi-telegram-bin.rs"
 
 [dependencies]
 anyhow = "1.0.79"

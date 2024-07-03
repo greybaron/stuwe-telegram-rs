@@ -9,7 +9,7 @@ use thiserror::Error;
 use tokio::sync::broadcast;
 use uuid::Uuid;
 
-#[derive(Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Backend {
     MensiMates,
     StuWe,

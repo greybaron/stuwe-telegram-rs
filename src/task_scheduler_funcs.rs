@@ -15,10 +15,10 @@ use crate::{
         compare_campusdual_grades, compare_campusdual_signup_options, get_campusdual_data,
         save_campusdual_grades, save_campusdual_signup_options,
     },
-    constants::NO_DB_MSG,
+    constants::{BACKEND, NO_DB_MSG},
     data_backend::stuwe_parser::update_cache,
     data_types::{
-        stuwe_data_types::CampusDualData, BroadcastUpdateTask, JobHandlerTask, JobType,
+        stuwe_data_types::CampusDualData, Backend, BroadcastUpdateTask, JobHandlerTask, JobType,
         RegistrationEntry,
     },
     db_operations::{
@@ -49,7 +49,6 @@ pub async fn handle_add_registration_task(
         sched,
         job_handler_task.clone(),
         jobhandler_task_tx,
-        None,
     )
     .await;
 
@@ -107,7 +106,6 @@ pub async fn handle_update_registration_task(
                     sched,
                     new_job_task.clone(),
                     jobhandler_task_tx.clone(),
-                    None
                 ).await
             } else {
                 // no new time was set -> return old job uuid
@@ -209,7 +207,7 @@ pub async fn handle_broadcast_update_task(
                 let text = format!(
                     "{}\n{}",
                     &markdown::bold(&markdown::underline("Planänderung:")),
-                    build_meal_message_dispatcher(0, mensa_id, None).await
+                    build_meal_message_dispatcher(0, mensa_id).await
                 );
 
                 bot.send_message(ChatId(*chat_id), text)
@@ -234,21 +232,23 @@ pub async fn start_mensacache_and_campusdual_job(
         let job_handler_tx = job_handler_tx.clone();
 
         Box::pin(async move {
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache+CampusDual");
+            if *BACKEND.get().unwrap() == Backend::StuWe {
+                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating Mensae");
 
-            match update_cache().await {
-                Ok(today_changed_mensen) => {
-                    for mensa_id in today_changed_mensen {
-                        job_handler_tx
-                            .send(BroadcastUpdateTask { mensa_id }.into())
-                            .unwrap();
+                match update_cache().await {
+                    Ok(today_changed_mensen) => {
+                        for mensa_id in today_changed_mensen {
+                            job_handler_tx
+                                .send(BroadcastUpdateTask { mensa_id }.into())
+                                .unwrap();
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("Failed to update cache: {}", e);
                     }
                 }
-                Err(e) => {
-                    log::error!("Failed to update cache: {}", e);
-                }
             }
-
+            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating CampusDual");
             check_notify_campusdual_grades_signups(bot, cd_data).await;
         })
     })
@@ -311,7 +311,7 @@ pub async fn load_jobs_from_db(
         let bot = bot.clone();
         let jobhandler_task_tx = jobhandler_task_tx.clone();
 
-        let uuid = load_job(bot, sched, task.clone(), jobhandler_task_tx, None).await;
+        let uuid = load_job(bot, sched, task.clone(), jobhandler_task_tx).await;
         loaded_user_data.insert(
             task.chat_id.unwrap(),
             RegistrationEntry {

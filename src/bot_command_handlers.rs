@@ -9,9 +9,9 @@ use crate::data_types::{
 
 use crate::shared_main::{build_meal_message_dispatcher, make_mensa_keyboard, make_query_data};
 use rand::Rng;
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, time::Instant};
 use teloxide::{prelude::*, types::ParseMode};
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 
 pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
     let keyboard = make_mensa_keyboard(mensen, MensaKeyboardAction::Register);
@@ -34,7 +34,6 @@ pub async fn day_cmd(
     cmd: Command,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
     user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
-    jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> HandlerResult {
     let mut user_registration_data_rx = user_registration_data_tx.subscribe();
 
@@ -51,8 +50,7 @@ pub async fn day_cmd(
         .unwrap();
 
     if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
-        let text =
-            build_meal_message_dispatcher(days_forward, registration.mensa_id, jwt_lock).await;
+        let text = build_meal_message_dispatcher(days_forward, registration.mensa_id).await;
         log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 

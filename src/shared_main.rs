@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, error::Error, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, env, error::Error, time::Instant};
 
 use chrono::Timelike;
 use teloxide::{
@@ -10,7 +10,7 @@ use teloxide_core::{
     types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ParseMode},
     Bot,
 };
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::broadcast;
 use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
@@ -86,15 +86,9 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
     KeyboardMarkup::new(keyboard).resize_keyboard(true)
 }
 
-pub async fn build_meal_message_dispatcher(
-    days_forward: i64,
-    mensa_location: u8,
-    jwt_lock: Option<Arc<RwLock<String>>>,
-) -> String {
+pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u8) -> String {
     match BACKEND.get().unwrap() {
-        Backend::MensiMates => {
-            mm_build_meal_msg(days_forward, mensa_location, jwt_lock.unwrap()).await
-        }
+        Backend::MensiMates => mm_build_meal_msg(days_forward, mensa_location).await,
         Backend::StuWe => stuwe_build_meal_msg(days_forward, mensa_location).await,
     }
 }
@@ -104,8 +98,6 @@ pub async fn load_job(
     sched: &JobScheduler,
     task: JobHandlerTask,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    // jwt_lock is only used for mensimates
-    jwt_lock: Option<Arc<RwLock<String>>>,
 ) -> Option<Uuid> {
     // return if no time is set
     task.hour?;
@@ -128,8 +120,6 @@ pub async fn load_job(
         )
         .as_str(),
         move |_uuid, mut _l| {
-            let jwt_lock = jwt_lock.clone();
-
             let bot = bot.clone();
             let jobhandler_task_tx = jobhandler_task_tx.clone();
 
@@ -140,7 +130,7 @@ pub async fn load_job(
 
                 bot.send_message(
                     ChatId(task.chat_id.unwrap()),
-                    build_meal_message_dispatcher(0, task.mensa_id.unwrap(), jwt_lock).await,
+                    build_meal_message_dispatcher(0, task.mensa_id.unwrap()).await,
                 )
                 .parse_mode(ParseMode::MarkdownV2)
                 .await
@@ -157,7 +147,6 @@ pub async fn load_job(
 }
 
 pub async fn callback_handler(
-    jwt_lock: Option<Arc<RwLock<String>>>,
     bot: Bot,
     q: CallbackQuery,
     mensen: BTreeMap<u8, String>,
@@ -187,7 +176,6 @@ pub async fn callback_handler(
                     let text = build_meal_message_dispatcher(
                         0,
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
-                        jwt_lock,
                     )
                     .await;
 
@@ -220,7 +208,6 @@ pub async fn callback_handler(
                         build_meal_message_dispatcher(
                             0,
                             *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
-                            jwt_lock,
                         )
                         .await,
                     )
@@ -245,7 +232,6 @@ pub async fn callback_handler(
                     let text = build_meal_message_dispatcher(
                         0,
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
-                        jwt_lock,
                     )
                     .await;
 
@@ -277,12 +263,9 @@ pub async fn callback_handler(
                         let day_str = ["Heute", "Morgen", "Übermorgen"]
                             [usize::try_from(days_forward).unwrap()];
 
-                        let text = build_meal_message_dispatcher(
-                            days_forward,
-                            prev_registration.mensa_id,
-                            jwt_lock,
-                        )
-                        .await;
+                        let text =
+                            build_meal_message_dispatcher(days_forward, prev_registration.mensa_id)
+                                .await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 

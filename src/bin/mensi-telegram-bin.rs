@@ -1,3 +1,4 @@
+use stuwe_telegram_rs::data_backend::mm_parser::get_mensen;
 // GEANT_OV_RSA_CA_4_tcs-cert3.pem has to be properly set up, eg. in /etc/ssl/certs for Debian
 // (the container image already has it)
 use stuwe_telegram_rs::data_types::stuwe_data_types::CampusDualData;
@@ -6,8 +7,8 @@ use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, invalid_cmd, reply_time_dialogue, show_different_mensa, start,
     start_time_dialogue, subscribe, unsubscribe,
 };
-use stuwe_telegram_rs::constants::{BACKEND, DB_FILENAME, OLLAMA_HOST, OLLAMA_MODEL, STUWE_DB};
-use stuwe_telegram_rs::data_backend::stuwe_parser::{get_mensen, update_cache};
+use stuwe_telegram_rs::constants::{BACKEND, DB_FILENAME, MENSI_DB, OLLAMA_HOST, OLLAMA_MODEL};
+// use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry,
@@ -15,9 +16,8 @@ use stuwe_telegram_rs::data_types::{
 use stuwe_telegram_rs::db_operations::{check_or_create_db_tables, init_mensa_id_db};
 use stuwe_telegram_rs::shared_main::{callback_handler, logger_init};
 use stuwe_telegram_rs::task_scheduler_funcs::{
-    handle_add_registration_task, handle_broadcast_update_task, handle_delete_registration_task,
-    handle_query_registration_task, handle_update_registration_task, load_jobs_from_db,
-    start_mensacache_and_campusdual_job,
+    handle_add_registration_task, handle_delete_registration_task, handle_query_registration_task,
+    handle_update_registration_task, load_jobs_from_db, start_mensacache_and_campusdual_job,
 };
 
 use clap::Parser;
@@ -33,7 +33,7 @@ use teloxide::{
 use tokio::sync::broadcast;
 use tokio_cron_scheduler::JobScheduler;
 
-/// Telegram bot to receive daily meal plans from any Studentenwerk Leipzig mensa.
+/// Telegram bot to receive daily meal plans, powered by MensiMates.
 /// {n}CampusDual support is enabled.
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -61,8 +61,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() {
-    DB_FILENAME.set(STUWE_DB).unwrap();
-    BACKEND.set(Backend::StuWe).unwrap();
+    DB_FILENAME.set(MENSI_DB).unwrap();
+    BACKEND.set(Backend::MensiMates).unwrap();
 
     //// Args setup
     let args = Args::parse();
@@ -89,15 +89,8 @@ async fn main() {
     //// DB setup
     check_or_create_db_tables().unwrap();
 
-    let mensen = get_mensen().await;
+    let mensen = get_mensen().await.unwrap();
     init_mensa_id_db(&mensen).unwrap();
-
-    // always update cache on startup
-    log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    match update_cache().await {
-        Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
-        Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
-    }
 
     let bot = Bot::new(args.token);
 
@@ -231,7 +224,7 @@ async fn run_task_scheduler(
             }
 
             JobType::BroadcastUpdate => {
-                handle_broadcast_update_task(&bot, job_handler_task, &mut loaded_user_data).await;
+                unreachable!()
             }
         }
     }
