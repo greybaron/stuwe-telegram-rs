@@ -1,6 +1,7 @@
 pub mod mm_data_types;
 pub mod stuwe_data_types;
 
+use serde::{Deserialize, Serialize};
 use teloxide::{
     dispatching::dialogue::InMemStorage, prelude::Dialogue, types::MessageId,
     utils::command::BotCommands,
@@ -189,3 +190,34 @@ pub struct ParsedTimeAndLastMsgFromDialleougueue {
     pub minute: u32,
     pub msgid: Option<MessageId>,
 }
+
+#[derive(Debug, Clone)]
+pub struct CampusDualData {
+    pub username: String,
+    pub password: String,
+    pub chat_id: i64,
+}
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CampusDualGrade {
+    pub name: String,
+    pub grade: String,
+    pub subgrades: usize,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
+pub struct CampusDualSignupOption {
+    pub name: String,
+    pub verfahren: String,
+    pub status: String,
+}
+
+#[derive(Error, Debug, Clone)]
+pub enum CampusDualError {
+    #[error("CampusDual init failed: {0}")]
+    CdInitFailed(u16),
+    #[error("CampusDual zba_init failed: {0}")]
+    CdZbaFailed(u16),
+    #[error("CampusDual: bad credentials")]
+    CdBadCredentials,
+}
+

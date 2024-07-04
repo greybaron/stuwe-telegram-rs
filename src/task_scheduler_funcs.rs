@@ -15,12 +15,9 @@ use crate::{
         compare_campusdual_grades, compare_campusdual_signup_options, get_campusdual_data,
         save_campusdual_grades, save_campusdual_signup_options,
     },
-    constants::{BACKEND, NO_DB_MSG},
+    constants::{BACKEND, CD_DATA, NO_DB_MSG},
     data_backend::stuwe_parser::update_cache,
-    data_types::{
-        stuwe_data_types::CampusDualData, Backend, BroadcastUpdateTask, JobHandlerTask, JobType,
-        RegistrationEntry,
-    },
+    data_types::{Backend, BroadcastUpdateTask, JobHandlerTask, JobType, RegistrationEntry},
     db_operations::{
         get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
     },
@@ -223,11 +220,8 @@ pub async fn start_mensacache_and_campusdual_job(
     bot: Bot,
     sched: &JobScheduler,
     job_handler_tx: Sender<JobHandlerTask>,
-    cd_data: CampusDualData,
 ) {
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
-        let cd_data = cd_data.clone();
-
         let bot = bot.clone();
         let job_handler_tx = job_handler_tx.clone();
 
@@ -249,52 +243,54 @@ pub async fn start_mensacache_and_campusdual_job(
                 }
             }
             log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating CampusDual");
-            check_notify_campusdual_grades_signups(bot, cd_data).await;
+            check_notify_campusdual_grades_signups(bot).await;
         })
     })
     .unwrap();
     sched.add(cache_and_broadcast_job).await.unwrap();
 }
 
-async fn check_notify_campusdual_grades_signups(bot: Bot, cd_data: CampusDualData) {
-    match get_campusdual_data(cd_data.username, cd_data.password).await {
-        Ok((grades, signup_options)) => {
-            if let Some(new_grades) = compare_campusdual_grades(&grades).await {
-                log::info!("Got new grades! Sending to {}", cd_data.chat_id);
+async fn check_notify_campusdual_grades_signups(bot: Bot) {
+    if let Some(cd_data) = CD_DATA.get() {
+        match get_campusdual_data(cd_data.username.clone(), cd_data.password.clone()).await {
+            Ok((grades, signup_options)) => {
+                if let Some(new_grades) = compare_campusdual_grades(&grades).await {
+                    log::info!("Got new grades! Sending to {}", cd_data.chat_id);
 
-                let mut msg = String::from("Neue Note:");
-                for grade in new_grades {
-                    msg.push_str(&format!("\n{}: {}", grade.name, grade.grade));
+                    let mut msg = String::from("Neue Note:");
+                    for grade in new_grades {
+                        msg.push_str(&format!("\n{}: {}", grade.name, grade.grade));
+                    }
+                    match bot.send_message(ChatId(cd_data.chat_id), msg).await {
+                        Ok(_) => save_campusdual_grades(&grades).await,
+                        Err(e) => {
+                            log::error!("Failed to send CD grades: {}", e);
+                        }
+                    }
                 }
-                match bot.send_message(ChatId(cd_data.chat_id), msg).await {
-                    Ok(_) => save_campusdual_grades(&grades).await,
-                    Err(e) => {
-                        log::error!("Failed to send CD grades: {}", e);
+                if let Some(new_signup_options) =
+                    compare_campusdual_signup_options(&signup_options).await
+                {
+                    log::info!("Got new signup options! Sending to {}", cd_data.chat_id);
+
+                    let mut msg = String::from("Neue Anmeldemöglichkeit:");
+                    for signup_option in new_signup_options {
+                        msg.push_str(&format!(
+                            "\n{} ({}) — {}",
+                            signup_option.status, signup_option.verfahren, signup_option.name
+                        ));
+                    }
+                    match bot.send_message(ChatId(cd_data.chat_id), msg).await {
+                        Ok(_) => save_campusdual_signup_options(&signup_options).await,
+                        Err(e) => {
+                            log::error!("Failed to send CD signup options: {}", e);
+                        }
                     }
                 }
             }
-            if let Some(new_signup_options) =
-                compare_campusdual_signup_options(&signup_options).await
-            {
-                log::info!("Got new signup options! Sending to {}", cd_data.chat_id);
-
-                let mut msg = String::from("Neue Anmeldemöglichkeit:");
-                for signup_option in new_signup_options {
-                    msg.push_str(&format!(
-                        "\n{} ({}) — {}",
-                        signup_option.status, signup_option.verfahren, signup_option.name
-                    ));
-                }
-                match bot.send_message(ChatId(cd_data.chat_id), msg).await {
-                    Ok(_) => save_campusdual_signup_options(&signup_options).await,
-                    Err(e) => {
-                        log::error!("Failed to send CD signup options: {}", e);
-                    }
-                }
+            Err(e) => {
+                log::error!("Failed to get CD grades: {}", e);
             }
-        }
-        Err(e) => {
-            log::error!("Failed to get CD grades: {}", e);
         }
     }
 }

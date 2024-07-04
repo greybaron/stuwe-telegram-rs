@@ -16,9 +16,6 @@ use tokio::time::Instant;
 pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
 
-    // all nows & .elapsed() are for performance info
-    let now = Instant::now();
-
     // get requested date
     let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
     let mut date_raised_by_days = 0;
@@ -37,7 +34,6 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
             // Any other weekday is fine, nothing to do
         }
     }
-    log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
     let day_meals = get_meals_from_db(requested_date, mensa_location).await;
@@ -363,7 +359,7 @@ async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
     Ok(today_changed_mensen_ids)
 }
 
-pub async fn get_mensen() -> BTreeMap<u8, String> {
+pub async fn get_mensen() -> Result<BTreeMap<u8, String>> {
     let mut mensen = BTreeMap::new();
 
     // pass invalid date to get empty page (dont need actual data) with all mensa locations
@@ -383,7 +379,7 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
 
     if mensen.is_empty() {
         log::warn!("Failed to load mensen from stuwe, falling back");
-        BTreeMap::from(
+        Ok(BTreeMap::from(
             [
                 (153, "Cafeteria Dittrichring"),
                 (127, "Mensaria am Botanischen Garten"),
@@ -396,8 +392,8 @@ pub async fn get_mensen() -> BTreeMap<u8, String> {
                 (170, "Mensa An den Tierklinik"),
             ]
             .map(|(id, name)| (id, name.to_string())),
-        )
+        ))
     } else {
-        mensen
+        Ok(mensen)
     }
 }

@@ -5,7 +5,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::data_types::stuwe_data_types::{
+use crate::data_types::{
     CampusDualError, CampusDualGrade, CampusDualSignupOption,
 };
 
