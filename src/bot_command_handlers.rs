@@ -51,14 +51,14 @@ pub async fn day_cmd(
 
     if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
         let text = build_meal_message_dispatcher(days_forward, registration.mensa_id).await;
-        log::debug!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
+        log::info!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
         bot.send_message(msg.chat.id, text)
             .parse_mode(ParseMode::MarkdownV2)
             .await?;
 
-        log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
+        log::info!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
     } else {
         // every user has a registration (starting the chat always calls /start)
         // if this is none, it most likely means the DB was wiped)

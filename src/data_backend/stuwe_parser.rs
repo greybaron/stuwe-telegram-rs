@@ -109,7 +109,7 @@ async fn reqwest_get_html_text(date: &str) -> Result<String> {
         "https://www.studentenwerk-leipzig.de/mensen-cafeterien/speiseplan?date=".to_string();
     let txt = reqwest::get(url_base + date).await?.text().await?;
 
-    log::debug!("reqwest_get_html_text: {:.2?}", now.elapsed());
+    log::info!("reqwest_get_html_text: {:.2?}", now.elapsed());
     Ok(txt)
 }
 
@@ -154,12 +154,14 @@ async fn extract_data_from_html(
                     meal_groups: meals,
                 });
             } else {
-                log::warn!(target: "stuwe_telegram_rs::stuwe_parser", "Mensa not found in DB: {}", mensa_title);
+                // log::warn!(target: "stuwe_telegram_rs::stuwe_parser", "Mensa not found in DB: {}", mensa_title);
+                log::warn!("Mensa not found in DB: {}", mensa_title);
             }
         }
     }
 
-    log::debug!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
+    // log::info!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
+    log::info!("HTML → Data: {:.2?}", now.elapsed());
     Ok(all_data_for_day)
 }
 
@@ -310,7 +312,7 @@ pub async fn update_cache() -> Result<Vec<u8>> {
         mensen_today_changed.append(&mut changed_mensen_ids);
     }
 
-    log::debug!(
+    log::info!(
         "{} Mensen changed meals of current day",
         mensen_today_changed.len()
     );
@@ -338,7 +340,7 @@ async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
 
         // if downloaded meals are different from cached meals, update cache
         if db_json_text.is_none() || downloaded_json_text != db_json_text.unwrap() {
-            log::debug!(
+            log::info!(
                 "updating cache: Mensa={} Date={}",
                 mensa_data_for_day.mensa_id,
                 date_string

@@ -7,22 +7,24 @@ use stuwe_telegram_rs::bot_command_handlers::{
     change_mensa, day_cmd, invalid_cmd, reply_time_dialogue, show_different_mensa, start,
     start_time_dialogue, subscribe, unsubscribe,
 };
-use stuwe_telegram_rs::constants::{BACKEND, CD_DATA, DB_FILENAME, MENSI_DB, OLLAMA_HOST, OLLAMA_MODEL};
-// use stuwe_telegram_rs::data_backend::stuwe_parser::update_cache;
+use stuwe_telegram_rs::constants::{
+    BACKEND, CD_DATA, DB_FILENAME, MENSI_DB, OLLAMA_HOST, OLLAMA_MODEL,
+};
+
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry,
 };
 use stuwe_telegram_rs::db_operations::{check_or_create_db_tables, init_mensa_id_db};
-use stuwe_telegram_rs::shared_main::{callback_handler, logger_init};
+use stuwe_telegram_rs::shared_main::callback_handler;
 use stuwe_telegram_rs::task_scheduler_funcs::{
     handle_add_registration_task, handle_delete_registration_task, handle_query_registration_task,
     handle_update_registration_task, load_jobs_from_db, start_mensacache_and_campusdual_job,
 };
 
 use clap::Parser;
-use log::log_enabled;
 use std::collections::BTreeMap;
+use std::env;
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -47,9 +49,9 @@ struct Args {
     /// The Chat-ID which will receive CampusDual exam scores
     #[arg(short, long, env)]
     chatid: Option<i64>,
-    /// Enable verbose logging (mostly performance metrics){n}[SETS env: RUST_LOG=debug]
-    #[arg(short, long)]
-    verbose: bool,
+    /// Enable debug logging{n}[SETS env: RUST_LOG=debug]
+    #[arg(long)]
+    debug: bool,
     /// Ollama API host for AI time parsing bloatware{n}Example: <http://127.0.0.1:11434/api>
     #[arg(long, env = "OLLAMA_HOST")]
     ollama_host: Option<String>,
@@ -69,25 +71,26 @@ async fn main() {
     OLLAMA_MODEL.set(args.ollama_model).unwrap();
 
     if args.user.is_some() && args.password.is_some() && args.chatid.is_some() {
-        CD_DATA.set(CampusDualData {
-            username: args.user.unwrap(),
-            password: args.password.unwrap(),
-            chat_id: args.chatid.unwrap(),
-        }).unwrap();
+        CD_DATA
+            .set(CampusDualData {
+                username: args.user.unwrap(),
+                password: args.password.unwrap(),
+                chat_id: args.chatid.unwrap(),
+            })
+            .unwrap();
     } else {
         log::info!("CampusDual support disabled")
     }
 
-    if args.verbose {
-        std::env::set_var("RUST_LOG", "debug");
+    if args.debug {
+        env::set_var("RUST_LOG", "debug");
+    } else if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).is_err() {
+        dbg!();
+        env::set_var("RUST_LOG", "info");
     }
 
-    logger_init(module_path!());
+    pretty_env_logger::init_timed();
     log::info!("Starting bot...");
-
-    if !(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace)) {
-        log::info!("Enable verbose logging for performance metrics");
-    }
 
     //// DB setup
     check_or_create_db_tables().unwrap();
@@ -168,8 +171,7 @@ async fn run_task_scheduler(
 ) {
     let sched = JobScheduler::new().await.unwrap();
 
-    start_mensacache_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx.clone())
-        .await;
+    start_mensacache_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx.clone()).await;
 
     let mut loaded_user_data: BTreeMap<i64, RegistrationEntry> = BTreeMap::new();
     load_jobs_from_db(
@@ -183,7 +185,8 @@ async fn run_task_scheduler(
     // start scheduler (non blocking)
     sched.start().await.unwrap();
 
-    log::info!(target: "mensi_telegram_rs::TaskSched", "Ready.");
+    // log::info!(target: "mensi_telegram_rs::TaskSched", "Ready.");
+    log::info!("Ready.");
 
     // receive job update msg (register/unregister/check existence)
     while let Ok(job_handler_task) = jobhandler_task_rx.recv().await {

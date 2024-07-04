@@ -29,7 +29,6 @@ async fn mm_get_meals_at_mensa_at_day(
     let date_str = format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
 
     let now = Instant::now();
-
     let resp = client
         .get(format!(
             "https://api.olech2412.de/mensaHub/meal/servingDate/{}/fromMensa/{}",
@@ -39,16 +38,13 @@ async fn mm_get_meals_at_mensa_at_day(
         .await?
         .error_for_status()?;
 
-    log::debug!("MensiMates response: {:.2?}", now.elapsed());
+    log::info!("MensiMates response: {:.2?}", now.elapsed());
 
     Ok(resp.json::<Vec<MensiMeal>>().await?)
 }
 
 pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
     let mut msg: String = String::new();
-
-    // all nows & .elapsed() are for performance metrics
-    let now = Instant::now();
 
     // get requested date
     let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
@@ -68,7 +64,6 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String 
             // Any other weekday is fine, nothing to do
         }
     }
-    log::debug!("build req params: {:.2?}", now.elapsed());
 
     // retrieve meals
     let day_meals = mm_get_meals_at_mensa_at_day(&requested_date, mensa_location).await;

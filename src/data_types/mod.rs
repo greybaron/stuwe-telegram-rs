@@ -220,4 +220,3 @@ pub enum CampusDualError {
     #[error("CampusDual: bad credentials")]
     CdBadCredentials,
 }
-

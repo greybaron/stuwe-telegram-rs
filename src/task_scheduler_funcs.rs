@@ -31,7 +31,12 @@ pub async fn handle_add_registration_task(
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
     jobhandler_task_tx: Sender<JobHandlerTask>,
 ) {
-    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Register: {} for Mensa {}", &job_handler_task.chat_id.unwrap(), &job_handler_task.mensa_id.unwrap());
+    // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Register: {} for Mensa {}", &job_handler_task.chat_id.unwrap(), &job_handler_task.mensa_id.unwrap());
+    log::info!(
+        "Register: {} for Mensa {}",
+        &job_handler_task.chat_id.unwrap(),
+        &job_handler_task.mensa_id.unwrap()
+    );
     // creates a new row, or replaces every col with new values
     init_db_record(&job_handler_task).unwrap();
     if let Some(previous_registration) = loaded_user_data.get(&job_handler_task.chat_id.unwrap()) {
@@ -69,10 +74,17 @@ pub async fn handle_update_registration_task(
     jobhandler_task_tx: Sender<JobHandlerTask>,
 ) {
     if let Some(mensa) = job_handler_task.mensa_id {
-        log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
+        // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
+        log::info!("{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
     }
     if job_handler_task.hour.is_some() {
-        log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
+        // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "{} changed 🕘: {:02}:{:02}", job_handler_task.chat_id.unwrap(), job_handler_task.hour.unwrap(), job_handler_task.minute.unwrap());
+        log::info!(
+            "{} changed 🕘: {:02}:{:02}",
+            job_handler_task.chat_id.unwrap(),
+            job_handler_task.hour.unwrap(),
+            job_handler_task.minute.unwrap()
+        );
     }
 
     if let Some(previous_registration) = loaded_user_data.get(&job_handler_task.chat_id.unwrap()) {
@@ -134,7 +146,8 @@ pub async fn handle_delete_registration_task(
     sched: &JobScheduler,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
-    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Unregister: {}", &job_handler_task.chat_id.unwrap());
+    // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Unregister: {}", &job_handler_task.chat_id.unwrap());
+    log::info!("Unregister: {}", &job_handler_task.chat_id.unwrap());
 
     // unregister is only invoked if existence of job is guaranteed
     let previous_registration = loaded_user_data
@@ -172,7 +185,11 @@ pub async fn handle_query_registration_task(
     // check if uuid exists
     let opt_registration_entry = loaded_user_data.get(&job_handler_task.chat_id.unwrap());
     if opt_registration_entry.is_none() {
-        log::warn!(target: "stuwe_telegram_rs::TS::QueryReg", "chat_id {} has no registration", &job_handler_task.chat_id.unwrap());
+        // log::warn!(target: "stuwe_telegram_rs::TS::QueryReg", "chat_id {} has no registration", &job_handler_task.chat_id.unwrap());
+        log::warn!(
+            "chat_id {} has no registration",
+            &job_handler_task.chat_id.unwrap()
+        );
     }
 
     user_registration_data_tx
@@ -185,7 +202,11 @@ pub async fn handle_broadcast_update_task(
     job_handler_task: JobHandlerTask,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
-    log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
+    // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "TodayMeals changed @Mensa {}", &job_handler_task.mensa_id.unwrap());
+    log::info!(
+        "TodayMeals changed @Mensa {}",
+        &job_handler_task.mensa_id.unwrap()
+    );
     for (chat_id, registration_data) in loaded_user_data {
         let mensa_id = registration_data.mensa_id;
 
@@ -199,7 +220,8 @@ pub async fn handle_broadcast_update_task(
                         // only send updates after job message has been sent: job hour has to be earlier OR same hour, earlier minute
                         && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
             {
-                log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
+                // log::info!(target: "stuwe_telegram_rs::TS::Jobs", "Sent update to {}", chat_id);
+                log::info!("Sent update to {}", chat_id);
 
                 let text = format!(
                     "{}\n{}",
@@ -227,7 +249,8 @@ pub async fn start_mensacache_and_campusdual_job(
 
         Box::pin(async move {
             if *BACKEND.get().unwrap() == Backend::StuWe {
-                log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating Mensae");
+                // log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating Mensae");
+                log::info!("Updating Mensae");
 
                 match update_cache().await {
                     Ok(today_changed_mensen) => {
@@ -242,7 +265,8 @@ pub async fn start_mensacache_and_campusdual_job(
                     }
                 }
             }
-            log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating CampusDual");
+            // log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating CampusDual");
+            log::info!("Updating CampusDual");
             check_notify_campusdual_grades_signups(bot).await;
         })
     })

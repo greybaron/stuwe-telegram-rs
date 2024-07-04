@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, error::Error, time::Instant};
+use std::{collections::BTreeMap, error::Error, time::Instant};
 
 use chrono::Timelike;
 use teloxide::{
@@ -26,22 +26,6 @@ use crate::{
     data_types::{JobHandlerTask, RegistrationEntry},
     db_operations::update_db_row,
 };
-
-pub fn logger_init(module_path: &str) {
-    pretty_env_logger::formatted_timed_builder()
-        .filter_level(log::LevelFilter::Info)
-        .filter_module(
-            module_path,
-            if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).unwrap_or_default()
-                == "debug"
-            {
-                log::LevelFilter::Debug
-            } else {
-                log::LevelFilter::Info
-            },
-        )
-        .init();
-}
 
 pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
     QueryRegistrationTask { chat_id }.into()
@@ -266,7 +250,7 @@ pub async fn callback_handler(
                         let text =
                             build_meal_message_dispatcher(days_forward, prev_registration.mensa_id)
                                 .await;
-                        log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
+                        log::info!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
                         jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
@@ -274,7 +258,7 @@ pub async fn callback_handler(
                         bot.send_message(chat.id, text)
                             .parse_mode(ParseMode::MarkdownV2)
                             .await?;
-                        log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
+                        log::info!("Send {} msg: {:.2?}", day_str, now.elapsed());
                     } else {
                         bot.send_message(chat.id, NO_DB_MSG).await?;
                     }

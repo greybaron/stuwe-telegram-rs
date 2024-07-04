@@ -5,9 +5,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
 };
 
-use crate::data_types::{
-    CampusDualError, CampusDualGrade, CampusDualSignupOption,
-};
+use crate::data_types::{CampusDualError, CampusDualGrade, CampusDualSignupOption};
 
 async fn extract_grades(html_text: String) -> Result<Vec<CampusDualGrade>> {
     let mut grades = Vec::new();
