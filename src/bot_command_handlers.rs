@@ -44,14 +44,12 @@ pub async fn day_cmd(
         _ => unreachable!(),
     };
 
-    let now = Instant::now();
     jobhandler_task_tx
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
 
     if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
         let text = build_meal_message_dispatcher(days_forward, registration.mensa_id).await;
-        log::info!("Build {:?} msg: {:.2?}", cmd, now.elapsed());
         let now = Instant::now();
 
         bot.send_message(msg.chat.id, text)
@@ -99,10 +97,6 @@ pub async fn subscribe(
         .send(make_query_data(msg.chat.id.0))
         .unwrap();
     if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
-        jobhandler_task_tx
-            .send(make_query_data(msg.chat.id.0))
-            .unwrap();
-
         if registration.job_uuid.is_some() {
             if rand::thread_rng().gen_range(0..10) == 0 {
                 send_bloat_image(&bot, msg.chat.id).await;
@@ -116,8 +110,8 @@ pub async fn subscribe(
         } else {
             bot.send_message(
                         msg.chat.id,
-                        "Plan wird ab jetzt automatisch an Wochentagen 06:00 Uhr gesendet.\n\nÄndern mit /uhrzeit",
-                    )
+                        "Plan wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet.\n\nÄndern mit /uhrzeit",
+                    ).parse_mode(ParseMode::MarkdownV2)
                     .await?;
 
             let registration_job = UpdateRegistrationTask {
@@ -231,8 +225,7 @@ pub async fn start_time_dialogue(
                 .unwrap();
         }
 
-        Err(e) => {
-            dbg!(e);
+        Err(_) => {
             dialogue
                 .update(DialogueState::AwaitTimeReply)
                 .await

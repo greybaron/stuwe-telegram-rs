@@ -67,6 +67,8 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String 
 
     // retrieve meals
     let day_meals = mm_get_meals_at_mensa_at_day(&requested_date, mensa_location).await;
+
+    let now = Instant::now();
     let german_date = german_date_fmt(requested_date.date_naive());
 
     // start message formatting
@@ -87,6 +89,7 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String 
 
     match day_meals {
         Ok(meals) => {
+            println!("{:#?}", &meals);
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
@@ -133,6 +136,14 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String 
                         if !price_is_shared {
                             msg += &format!("  {}\n", &meal.price);
                         }
+
+                        if meal.votes != 0 {
+                            msg += &format!(
+                                "    Bewertung: {} ({})\n",
+                                float_rating_to_stars(meal.rating),
+                                meal.rating
+                            );
+                        }
                     }
 
                     if price_is_shared {
@@ -147,5 +158,27 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String 
         }
     }
 
-    escape_markdown_v2(&msg)
+    let msg = escape_markdown_v2(&msg);
+    log::info!("MensiMates build msg: {:.2?}", now.elapsed());
+
+    msg
+}
+
+pub fn float_rating_to_stars(rating: f32) -> String {
+    let floor = rating.floor();
+    let partial_star = match rating - floor {
+        r if r >= 0.875 => '🌕',
+        r if r >= 0.625 => '🌖',
+        r if r >= 0.375 => '🌗',
+        r if r >= 0.125 => '🌘',
+        _ => '🌑',
+    };
+
+    let mut stars: String = "🌕".repeat(floor as usize);
+    if (floor as usize) < 5 {
+        stars.push(partial_star);
+        stars.push_str(&"🌑".repeat(5 - stars.chars().count()));
+    }
+
+    stars
 }

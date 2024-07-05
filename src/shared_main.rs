@@ -77,12 +77,7 @@ pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u8
     }
 }
 
-pub async fn load_job(
-    bot: Bot,
-    sched: &JobScheduler,
-    task: JobHandlerTask,
-    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-) -> Option<Uuid> {
+pub async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> Option<Uuid> {
     // return if no time is set
     task.hour?;
 
@@ -105,13 +100,8 @@ pub async fn load_job(
         .as_str(),
         move |_uuid, mut _l| {
             let bot = bot.clone();
-            let jobhandler_task_tx = jobhandler_task_tx.clone();
 
             Box::pin(async move {
-                jobhandler_task_tx
-                    .send(make_query_data(task.chat_id.unwrap()))
-                    .unwrap();
-
                 bot.send_message(
                     ChatId(task.chat_id.unwrap()),
                     build_meal_message_dispatcher(0, task.mensa_id.unwrap()).await,
@@ -218,8 +208,6 @@ pub async fn callback_handler(
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                     )
                     .await;
-
-                    jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
 
                     bot.send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)

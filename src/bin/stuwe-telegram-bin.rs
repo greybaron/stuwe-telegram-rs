@@ -85,7 +85,6 @@ async fn main() {
     if args.debug {
         env::set_var("RUST_LOG", "debug");
     } else if env::var(pretty_env_logger::env_logger::DEFAULT_FILTER_ENV).is_err() {
-        dbg!();
         env::set_var("RUST_LOG", "info");
     }
 
@@ -99,12 +98,8 @@ async fn main() {
     init_mensa_id_db(&mensen).unwrap();
 
     // always update cache on startup
-    // log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
-    // log::info!(target: "stuwe_telegram_rs::TaskSched", "Updating cache...");
     match update_cache().await {
-        // Ok(_) => log::info!(target: "stuwe_telegram_rs::TaskSched", "Cache updated!"),
         Ok(_) => log::info!("Cache updated!"),
-        // Err(e) => log::error!(target: "stuwe_telegram_rs::TaskSched", "Cache update failed: {}", e),
         Err(e) => log::error!("Cache update failed: {}", e),
     }
 
@@ -184,32 +179,19 @@ async fn run_task_scheduler(
     start_mensacache_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx.clone()).await;
 
     let mut loaded_user_data: BTreeMap<i64, RegistrationEntry> = BTreeMap::new();
-    load_jobs_from_db(
-        &bot,
-        &sched,
-        &mut loaded_user_data,
-        jobhandler_task_tx.clone(),
-    )
-    .await;
+    load_jobs_from_db(&bot, &sched, &mut loaded_user_data).await;
 
     // start scheduler (non blocking)
     sched.start().await.unwrap();
 
-    // log::info!(target: "stuwe_telegram_rs::TaskSched", "Ready.");
     log::info!("Ready.");
 
     // receive job update msg (register/unregister/check existence)
     while let Ok(job_handler_task) = jobhandler_task_rx.recv().await {
         match job_handler_task.job_type {
             JobType::Register => {
-                handle_add_registration_task(
-                    &bot,
-                    job_handler_task,
-                    &sched,
-                    &mut loaded_user_data,
-                    jobhandler_task_tx.clone(),
-                )
-                .await;
+                handle_add_registration_task(&bot, job_handler_task, &sched, &mut loaded_user_data)
+                    .await;
             }
 
             JobType::UpdateRegistration => {
@@ -218,7 +200,6 @@ async fn run_task_scheduler(
                     job_handler_task,
                     &sched,
                     &mut loaded_user_data,
-                    jobhandler_task_tx.clone(),
                 )
                 .await;
             }

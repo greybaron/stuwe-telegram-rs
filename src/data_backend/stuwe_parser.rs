@@ -36,7 +36,11 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
     }
 
     // retrieve meals
+    let now = Instant::now();
     let day_meals = get_meals_from_db(requested_date, mensa_location).await;
+    log::info!("DB data: {:.2?}", now.elapsed());
+
+    let now = Instant::now();
 
     // start message formatting
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
@@ -90,7 +94,10 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
         }
     }
 
-    escape_markdown_v2(&msg)
+    let msg = escape_markdown_v2(&msg);
+    log::info!("StuWe build msg: {:.2?}", now.elapsed());
+
+    msg
 }
 
 async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> Vec<MealGroup> {
@@ -154,13 +161,11 @@ async fn extract_data_from_html(
                     meal_groups: meals,
                 });
             } else {
-                // log::warn!(target: "stuwe_telegram_rs::stuwe_parser", "Mensa not found in DB: {}", mensa_title);
                 log::warn!("Mensa not found in DB: {}", mensa_title);
             }
         }
     }
 
-    // log::info!(target: "stuwe_telegram_rs::stuwe_parser", "HTML → Data: {:.2?}", now.elapsed());
     log::info!("HTML → Data: {:.2?}", now.elapsed());
     Ok(all_data_for_day)
 }

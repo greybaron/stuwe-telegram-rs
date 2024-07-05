@@ -190,7 +190,7 @@ async fn extract_exam_registr_options(html_text: String) -> Result<Vec<CampusDua
         let content_selector = &Selector::parse("td").unwrap();
         let mut content = line.select(content_selector);
         let class = content.next().unwrap().text().next().unwrap();
-        let verfahren = content.next().unwrap().text().next().unwrap(); // .inner_html();
+        let verfahren = content.next().unwrap().text().next().unwrap();
 
         let subline_selector = &Selector::parse(&format!(".child-of-{l_id}")).unwrap();
         let status_icon_url = table
