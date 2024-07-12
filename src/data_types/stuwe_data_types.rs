@@ -13,7 +13,7 @@ pub struct MealGroup {
     pub sub_meals: Vec<SingleMeal>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct SingleMeal {
     pub name: String,
     pub additional_ingredients: Vec<String>,

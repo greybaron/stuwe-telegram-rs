@@ -3,7 +3,7 @@ use std::vec;
 
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
 use crate::data_types::stuwe_data_types::{DataForMensaForDay, MealGroup, SingleMeal};
-use crate::db_operations::{get_meal_from_db, mensa_name_get_id_db, save_meal_to_db};
+use crate::db_operations::{get_jsonmeals_from_db, mensa_name_get_id_db, save_meal_to_db};
 
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Weekday};
@@ -102,9 +102,9 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
 
 async fn get_meals_from_db(requested_date: DateTime<Local>, mensa: u8) -> Vec<MealGroup> {
     let date_str = build_date_string(requested_date);
-    let json_text = get_meal_from_db(&date_str, mensa).await.unwrap();
+    let json_text = get_jsonmeals_from_db(&date_str, mensa).await.unwrap();
     if let Some(json_text) = json_text {
-        json_to_meal(&json_text).await
+        json_to_meal(&json_text).await.unwrap()
     } else {
         vec![]
     }
@@ -198,10 +198,16 @@ fn extract_mealgroup_from_htmlcontainer(meal_container: ElementRef<'_>) -> Resul
                 let text = item.inner_html();
                 // for whatever reason there might be, sometimes this element exists without any content
                 if !text.is_empty() {
-                    item.inner_html()
-                        .split('·')
-                        .map(|slice| slice.trim().to_string())
-                        .collect()
+                    let mut add_ingr_dedup: Vec<String> = vec![];
+                    let inner_html = item.inner_html();
+                    let iter = inner_html.split('·').map(|slice| slice.trim().to_string());
+                    for ingr in iter {
+                        if !add_ingr_dedup.contains(&ingr) {
+                            add_ingr_dedup.push(ingr);
+                        }
+                    }
+
+                    add_ingr_dedup
                 } else {
                     // in that case, return empty vec (otherwise it would be a vec with one empty string in it)
                     vec![]
@@ -235,11 +241,14 @@ fn extract_mealgroup_from_htmlcontainer(meal_container: ElementRef<'_>) -> Resul
             }
             Some(meal_group) => {
                 // meal group of this type already exists, add meal to it
-                meal_group.sub_meals.push(SingleMeal {
+                let add_meal = SingleMeal {
                     name: title,
                     price,
                     additional_ingredients,
-                });
+                };
+                if !meal_group.sub_meals.contains(&add_meal) {
+                    meal_group.sub_meals.push(add_meal);
+                }
             }
         }
     }
@@ -325,8 +334,8 @@ pub async fn update_cache() -> Result<Vec<u8>> {
     Ok(mensen_today_changed)
 }
 
-async fn json_to_meal(json_text: &str) -> Vec<MealGroup> {
-    serde_json::from_str(json_text).unwrap()
+async fn json_to_meal(json_text: &str) -> Result<Vec<MealGroup>> {
+    Ok(serde_json::from_str(json_text)?)
 }
 
 async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
@@ -341,7 +350,7 @@ async fn parse_and_save_meals(day: DateTime<Local>) -> Result<Vec<u8>> {
     // serialize downloaded meals
     for mensa_data_for_day in all_data_for_day {
         let downloaded_json_text = serde_json::to_string(&mensa_data_for_day.meal_groups).unwrap();
-        let db_json_text = get_meal_from_db(&date_string, mensa_data_for_day.mensa_id).await?;
+        let db_json_text = get_jsonmeals_from_db(&date_string, mensa_data_for_day.mensa_id).await?;
 
         // if downloaded meals are different from cached meals, update cache
         if db_json_text.is_none() || downloaded_json_text != db_json_text.unwrap() {

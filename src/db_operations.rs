@@ -178,7 +178,7 @@ pub async fn save_meal_to_db(date: &str, mensa: u8, json_text: &str) -> rusqlite
     Ok(())
 }
 
-pub async fn get_meal_from_db(date: &str, mensa: u8) -> rusqlite::Result<Option<String>> {
+pub async fn get_jsonmeals_from_db(date: &str, mensa: u8) -> rusqlite::Result<Option<String>> {
     let conn = Connection::open(DB_FILENAME.get().unwrap())?;
     let mut stmt =
         conn.prepare_cached("select json_text from meals where (mensa_id, date) = (?1, ?2)")?;
