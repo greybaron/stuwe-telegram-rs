@@ -25,17 +25,17 @@ pub enum Command {
     Morgen,
     #[command(description = "Andere Mensa abrufen\n")]
     Andere,
-    #[command(description = "off")]
+    #[command(hide)]
     Uebermorgen,
     #[command(description = "automat. Nachrichten AN")]
     Subscribe,
     #[command(description = "autom. Nachrichten AUS")]
     Unsubscribe,
-    #[command(description = "off")]
+    #[command(hide)]
     Uhrzeit,
-    #[command(description = "off")]
+    #[command(hide)]
     Mensa,
-    #[command(description = "off")]
+    #[command(hide)]
     Start,
 }
 

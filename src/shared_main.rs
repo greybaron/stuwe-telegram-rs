@@ -7,7 +7,7 @@ use teloxide::{
     utils::{command::BotCommands, markdown},
 };
 use teloxide_core::{
-    types::{InlineKeyboardButton, InlineKeyboardMarkup, Message, ParseMode},
+    types::{InlineKeyboardButton, InlineKeyboardMarkup, ParseMode},
     Bot,
 };
 use tokio::sync::broadcast;
@@ -67,7 +67,7 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
             KeyboardButton::new("/mensa"),
         ],
     ];
-    KeyboardMarkup::new(keyboard).resize_keyboard(true)
+    KeyboardMarkup::new(keyboard).resize_keyboard()
 }
 
 pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u8) -> String {
@@ -133,7 +133,10 @@ pub async fn callback_handler(
         // acknowledge callback query to remove the loading alert
         bot.answer_callback_query(q.id).await?;
 
-        if let Some(Message { id, chat, .. }) = q.message {
+        if let Some(message) = q.message {
+            let id = message.id();
+            let chat = message.chat();
+
             let (cmd, arg) = q_data.split_once(':').unwrap();
             match cmd {
                 "m_upd" => {

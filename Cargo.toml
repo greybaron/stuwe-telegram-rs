@@ -21,17 +21,17 @@ pretty_env_logger = "0.5.0"
 rand = "0.8.5"
 regex-lite = "0.1.5"
 reqwest = { version = "0.12.2", features = ["cookies", "json"] }
-rusqlite = { version = "0.31.0" }
-scraper = "0.19.0"
+rusqlite = { version = "0.32.1" }
+scraper = "0.20.0"
 selectors = "0.25.0"
 serde = { version = "1.0.196", features = ["derive"] }
 serde_json = "1.0.113"
 static_init = "1.0.3"
-teloxide = { version = "0.12.2", features = ["macros"] }
-teloxide-core = "0.9.1"
+teloxide = { version = "0.13.0", features = ["macros"] }
+teloxide-core = "0.10.1"
 thiserror = "1.0.56"
 tokio = { version = "1.35.1", features = ["rt-multi-thread", "macros"] }
-tokio-cron-scheduler = "0.10.0"
+tokio-cron-scheduler = "0.13.0"
 uuid = "1.7.0"
 
 [profile.release]
