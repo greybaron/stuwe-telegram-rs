@@ -245,7 +245,6 @@ pub async fn start_mensaupd_hook_and_campusdual_job(
         let bot = bot.clone();
 
         Box::pin(async move {
-            log::info!("Updating CampusDual");
             check_notify_campusdual_grades_signups(bot).await;
         })
     })
@@ -279,6 +278,7 @@ pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -
 
 async fn check_notify_campusdual_grades_signups(bot: Bot) {
     if let Some(cd_data) = CD_DATA.get() {
+        log::info!("Updating CampusDual");
         match get_campusdual_data(cd_data.username.clone(), cd_data.password.clone()).await {
             Ok((grades, signup_options)) => {
                 if let Some(new_grades) = compare_campusdual_grades(&grades).await {

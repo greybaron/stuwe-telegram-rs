@@ -1,5 +1,5 @@
 use rusqlite::{params, Connection};
-use std::{collections::BTreeMap, process::exit};
+use std::process::exit;
 
 use crate::{
     constants::DB_FILENAME,
@@ -73,40 +73,6 @@ pub fn check_or_create_db_tables() -> rusqlite::Result<()> {
         )",
     )?
     .execute([])?;
-
-    // table of all mensa names
-    conn.prepare(
-        "create table if not exists mensen (
-            mensa_id integer primary key,
-            mensa_name text not null unique
-        )",
-    )?
-    .execute([])?;
-
-    // table of all meals
-    conn.prepare(
-        "create table if not exists meals (
-            mensa_id integer,
-            date text,
-            json_text text,
-            foreign key (mensa_id) references mensen(mensa_id)
-        )",
-    )?
-    .execute([])?;
-
-    Ok(())
-}
-
-pub fn init_mensa_id_db(mensen: &BTreeMap<u8, String>) -> rusqlite::Result<()> {
-    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
-    let mut stmt = conn.prepare_cached(
-        "replace into mensen (mensa_id, mensa_name)
-            values (?1, ?2)",
-    )?;
-
-    for (id, name) in mensen.iter() {
-        stmt.execute(params![id.to_string(), name])?;
-    }
 
     Ok(())
 }
