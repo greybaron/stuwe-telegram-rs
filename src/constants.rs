@@ -2,6 +2,8 @@ use std::sync::OnceLock;
 
 use crate::data_types::{Backend, CampusDualData};
 
+pub static API_URL: OnceLock<String> = OnceLock::new();
+
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
 pub const MENSI_DB: &str = "mensimates.sqlite";
 pub const STUWE_DB: &str = "stuwe.sqlite";
