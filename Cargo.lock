@@ -2265,7 +2265,6 @@ dependencies = [
  "reqwest-websocket",
  "rusqlite",
  "scraper",
- "selectors",
  "serde",
  "serde_json",
  "static_init",

@@ -14,7 +14,7 @@ use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, JobHandlerTask, JobHandlerTaskType, JobType,
     QueryRegistrationType, RegistrationEntry,
 };
-use stuwe_telegram_rs::db_operations::{check_or_create_db_tables, init_mensa_id_db};
+use stuwe_telegram_rs::db_operations::check_or_create_db_tables;
 use stuwe_telegram_rs::shared_main::callback_handler;
 use stuwe_telegram_rs::task_scheduler_funcs::{
     handle_add_registration_task, handle_broadcast_update_task, handle_delete_registration_task,
@@ -97,7 +97,6 @@ async fn main() {
     check_or_create_db_tables().unwrap();
 
     let mensen = get_mensen().await.unwrap();
-    init_mensa_id_db(&mensen).unwrap();
 
     let bot = Bot::new(args.token);
 
