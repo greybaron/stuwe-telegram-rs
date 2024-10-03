@@ -7,7 +7,9 @@ use crate::data_types::{
     RegistrationEntry, UnregisterTask, UpdateRegistrationTask,
 };
 
-use crate::shared_main::{build_meal_message_dispatcher, make_mensa_keyboard, make_query_data};
+use crate::shared_main::{
+    build_meal_message_dispatcher, make_commands_keyrow, make_mensa_keyboard, make_query_data,
+};
 use rand::Rng;
 use std::{collections::BTreeMap, time::Instant};
 use teloxide::{prelude::*, types::ParseMode};
@@ -40,7 +42,7 @@ pub async fn day_cmd(
     let days_forward = match cmd {
         Command::Heute => 0,
         Command::Morgen => 1,
-        Command::Uebermorgen => 2,
+        Command::Übermorgen => 2,
         _ => unreachable!(),
     };
 
@@ -54,9 +56,10 @@ pub async fn day_cmd(
 
         bot.send_message(msg.chat.id, text)
             .parse_mode(ParseMode::MarkdownV2)
+            .reply_markup(make_commands_keyrow())
             .await?;
 
-        log::info!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
+        log::debug!("Send {:?} msg: {:.2?}", cmd, now.elapsed());
     } else {
         // every user has a registration (starting the chat always calls /start)
         // if this is none, it most likely means the DB was wiped)

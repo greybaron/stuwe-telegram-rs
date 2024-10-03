@@ -1,4 +1,8 @@
+use anyhow::Result;
 use chrono::Timelike;
+use futures_util::TryStreamExt;
+use reqwest::Client;
+use reqwest_websocket::{Message, RequestBuilderExt};
 use std::collections::BTreeMap;
 use teloxide::{
     payloads::SendMessageSetters,
@@ -15,8 +19,7 @@ use crate::{
         compare_campusdual_grades, compare_campusdual_signup_options, get_campusdual_data,
         save_campusdual_grades, save_campusdual_signup_options,
     },
-    constants::{BACKEND, CD_DATA, NO_DB_MSG},
-    data_backend::stuwe_parser::update_cache,
+    constants::{API_URL, BACKEND, CD_DATA, NO_DB_MSG},
     data_types::{Backend, BroadcastUpdateTask, JobHandlerTask, JobType, RegistrationEntry},
     db_operations::{
         get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
@@ -188,6 +191,7 @@ pub async fn handle_broadcast_update_task(
     job_handler_task: JobHandlerTask,
     loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
+    dbg!();
     log::info!(
         "TodayMeals changed @Mensa {}",
         &job_handler_task.mensa_id.unwrap()
@@ -222,38 +226,55 @@ pub async fn handle_broadcast_update_task(
     }
 }
 
-pub async fn start_mensacache_and_campusdual_job(
+pub async fn start_mensaupd_hook_and_campusdual_job(
     bot: Bot,
     sched: &JobScheduler,
     job_handler_tx: Sender<JobHandlerTask>,
 ) {
+    // listen for mensa updates
+    if *BACKEND.get().unwrap() == Backend::StuWe {
+        tokio::spawn(async {
+            let h = await_handle_mealplan_upd(job_handler_tx).await;
+            if let Some(e) = h.err() {
+                log::error!("Update broadcaster (WebSocket) failed: {:?}", e);
+            }
+        });
+    }
+
     let cache_and_broadcast_job = Job::new_async("0 0/5 * * * *", move |_uuid, mut _l| {
         let bot = bot.clone();
-        let job_handler_tx = job_handler_tx.clone();
 
         Box::pin(async move {
-            if *BACKEND.get().unwrap() == Backend::StuWe {
-                log::info!("Updating Mensae");
-
-                match update_cache().await {
-                    Ok(today_changed_mensen) => {
-                        for mensa_id in today_changed_mensen {
-                            job_handler_tx
-                                .send(BroadcastUpdateTask { mensa_id }.into())
-                                .unwrap();
-                        }
-                    }
-                    Err(e) => {
-                        log::error!("Failed to update cache: {}", e);
-                    }
-                }
-            }
             log::info!("Updating CampusDual");
             check_notify_campusdual_grades_signups(bot).await;
         })
     })
     .unwrap();
     sched.add(cache_and_broadcast_job).await.unwrap();
+}
+//todo remove pub
+pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -> Result<()> {
+    let response = Client::default()
+        .get(format!("{}/today_updated_ws", API_URL.get().unwrap()))
+        .upgrade() // Prepares the WebSocket upgrade.
+        .send()
+        .await?;
+
+    // Turns the response into a WebSocket stream.
+    let mut websocket = response.into_websocket().await?;
+
+    while let Some(message) = websocket.try_next().await? {
+        if let Message::Text(text) = message {
+            job_handler_tx.send(
+                BroadcastUpdateTask {
+                    mensa_id: text.parse().unwrap(),
+                }
+                .into(),
+            )?;
+        }
+    }
+
+    Ok(())
 }
 
 async fn check_notify_campusdual_grades_signups(bot: Bot) {
@@ -304,8 +325,8 @@ async fn check_notify_campusdual_grades_signups(bot: Bot) {
 pub async fn load_jobs_from_db(
     bot: &Bot,
     sched: &JobScheduler,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
-) {
+) -> BTreeMap<i64, RegistrationEntry> {
+    let mut loaded_user_data: BTreeMap<i64, RegistrationEntry> = BTreeMap::new();
     let tasks_from_db = get_all_user_registrations_db().unwrap();
 
     for task in tasks_from_db {
@@ -322,4 +343,6 @@ pub async fn load_jobs_from_db(
             },
         );
     }
+
+    loaded_user_data
 }

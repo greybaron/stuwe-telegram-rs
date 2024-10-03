@@ -19,11 +19,10 @@ use stuwe_telegram_rs::db_operations::{check_or_create_db_tables, init_mensa_id_
 use stuwe_telegram_rs::shared_main::callback_handler;
 use stuwe_telegram_rs::task_scheduler_funcs::{
     handle_add_registration_task, handle_delete_registration_task, handle_query_registration_task,
-    handle_update_registration_task, load_jobs_from_db, start_mensacache_and_campusdual_job,
+    handle_update_registration_task, load_jobs_from_db, start_mensaupd_hook_and_campusdual_job,
 };
 
 use clap::Parser;
-use std::collections::BTreeMap;
 use std::env;
 use teloxide::{
     dispatching::{
@@ -143,7 +142,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(dptree::case![Command::Start].endpoint(start))
         .branch(dptree::case![Command::Heute].endpoint(day_cmd))
         .branch(dptree::case![Command::Morgen].endpoint(day_cmd))
-        .branch(dptree::case![Command::Uebermorgen].endpoint(day_cmd))
+        .branch(dptree::case![Command::Übermorgen].endpoint(day_cmd))
         .branch(dptree::case![Command::Andere].endpoint(show_different_mensa))
         .branch(dptree::case![Command::Subscribe].endpoint(subscribe))
         .branch(dptree::case![Command::Unsubscribe].endpoint(unsubscribe))
@@ -170,10 +169,9 @@ async fn run_task_scheduler(
 ) {
     let sched = JobScheduler::new().await.unwrap();
 
-    start_mensacache_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx.clone()).await;
+    start_mensaupd_hook_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx).await;
 
-    let mut loaded_user_data: BTreeMap<i64, RegistrationEntry> = BTreeMap::new();
-    load_jobs_from_db(&bot, &sched, &mut loaded_user_data).await;
+    let mut loaded_user_data = load_jobs_from_db(&bot, &sched).await;
 
     // start scheduler (non blocking)
     sched.start().await.unwrap();

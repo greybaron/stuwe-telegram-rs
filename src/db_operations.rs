@@ -111,15 +111,6 @@ pub fn init_mensa_id_db(mensen: &BTreeMap<u8, String>) -> rusqlite::Result<()> {
     Ok(())
 }
 
-pub fn mensa_name_get_id_db(mensa_name: &str) -> rusqlite::Result<Option<u8>> {
-    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
-    let mut stmt = conn.prepare_cached("SELECT (mensa_id) FROM mensen WHERE mensa_name = ?1")?;
-
-    let mut id_iter = stmt.query_map([mensa_name], |row| row.get(0))?;
-
-    Ok(id_iter.next().map(|row| row.unwrap()))
-}
-
 pub fn get_all_user_registrations_db() -> rusqlite::Result<Vec<JobHandlerTask>> {
     let mut tasks: Vec<JobHandlerTask> = Vec::new();
     let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
@@ -159,30 +150,4 @@ pub fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()>
     ])?;
 
     Ok(())
-}
-
-pub async fn save_meal_to_db(date: &str, mensa: u8, json_text: &str) -> rusqlite::Result<()> {
-    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
-    conn.execute(
-        "delete from meals where mensa_id = ?1 and date = ?2",
-        [mensa.to_string(), date.to_string()],
-    )?;
-
-    let mut stmt = conn.prepare_cached(
-        "insert into meals (mensa_id, date, json_text)
-            values (?1, ?2, ?3)",
-    )?;
-
-    stmt.execute(params![mensa, date, json_text])?;
-
-    Ok(())
-}
-
-pub async fn get_jsonmeals_from_db(date: &str, mensa: u8) -> rusqlite::Result<Option<String>> {
-    let conn = Connection::open(DB_FILENAME.get().unwrap())?;
-    let mut stmt =
-        conn.prepare_cached("select json_text from meals where (mensa_id, date) = (?1, ?2)")?;
-    let mut rows = stmt.query([&mensa.to_string(), date])?;
-
-    Ok(rows.next().unwrap().map(|row| row.get(0).unwrap()))
 }

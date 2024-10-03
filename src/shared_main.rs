@@ -60,7 +60,7 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
         vec![
             KeyboardButton::new("/heute"),
             KeyboardButton::new("/morgen"),
-            KeyboardButton::new("/uebermorgen"),
+            KeyboardButton::new("/übermorgen"),
         ],
         vec![
             KeyboardButton::new("/andere"),
@@ -241,7 +241,7 @@ pub async fn callback_handler(
                         let text =
                             build_meal_message_dispatcher(days_forward, prev_registration.mensa_id)
                                 .await;
-                        log::info!("Build {} msg: {:.2?}", day_str, now.elapsed());
+                        log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 
                         jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
@@ -249,7 +249,7 @@ pub async fn callback_handler(
                         bot.send_message(chat.id, text)
                             .parse_mode(ParseMode::MarkdownV2)
                             .await?;
-                        log::info!("Send {} msg: {:.2?}", day_str, now.elapsed());
+                        log::debug!("Send {} msg: {:.2?}", day_str, now.elapsed());
                     } else {
                         bot.send_message(chat.id, NO_DB_MSG).await?;
                     }

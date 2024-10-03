@@ -26,7 +26,7 @@ pub enum Command {
     #[command(description = "Andere Mensa abrufen\n")]
     Andere,
     #[command(hide)]
-    Uebermorgen,
+    Übermorgen,
     #[command(description = "automat. Nachrichten AN")]
     Subscribe,
     #[command(description = "autom. Nachrichten AUS")]
