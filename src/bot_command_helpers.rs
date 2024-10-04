@@ -135,9 +135,10 @@ pub async fn parse_time_send_status_msgs(
 }
 async fn ai_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
     let prompt = format!(
-         "Finde EINE Uhrzeit. Antworte NUR 'HH:mm' ODER 'nicht vorhanden'. KEINE ERKLÄRUNG. Eingabe: #{}#",
-    txt
-        );
+        "I am looking for a time. If you know which one I mean, ONLY reply in 24 hour format, \
+         else 'null'. Input is in 24hr format. NO EXPLANATION. Input: {}",
+        txt
+    );
 
     let ollama_host = OLLAMA_HOST.get().unwrap();
     let ollama_model = OLLAMA_MODEL.get().unwrap();

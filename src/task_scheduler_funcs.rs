@@ -3,7 +3,7 @@ use chrono::Timelike;
 use futures_util::TryStreamExt;
 use reqwest::Client;
 use reqwest_websocket::{Message, RequestBuilderExt};
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, time::Duration};
 use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
@@ -11,7 +11,7 @@ use teloxide::{
     utils::markdown,
     Bot,
 };
-use tokio::sync::broadcast::Sender;
+use tokio::{sync::broadcast::Sender, time::sleep};
 use tokio_cron_scheduler::{Job, JobScheduler};
 
 use crate::{
@@ -233,10 +233,14 @@ pub async fn start_mensaupd_hook_and_campusdual_job(
 ) {
     // listen for mensa updates
     if *BACKEND.get().unwrap() == Backend::StuWe {
-        tokio::spawn(async {
-            let h = await_handle_mealplan_upd(job_handler_tx).await;
-            if let Some(e) = h.err() {
-                log::error!("Update broadcaster (WebSocket) failed: {:?}", e);
+        tokio::spawn(async move {
+            loop {
+                let tx = job_handler_tx.clone();
+                let h = await_handle_mealplan_upd(tx).await;
+                if h.is_err() {
+                    log::error!("WebSocket connection failed");
+                }
+                sleep(Duration::from_secs(5)).await;
             }
         });
     }
@@ -261,6 +265,7 @@ pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -
 
     // Turns the response into a WebSocket stream.
     let mut websocket = response.into_websocket().await?;
+    log::info!("WebSocket connected");
 
     while let Some(message) = websocket.try_next().await? {
         if let Message::Text(text) = message {

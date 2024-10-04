@@ -32,7 +32,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
 
     // retrieve meals
     let now = Instant::now();
-    match get_meals_from_api(requested_date, mensa_location).await {
+    let msg = match get_meals_from_api(requested_date, mensa_location).await {
         Err(_) => "Ein Fehler ist aufgetreten.".to_string(),
         Ok(meal_groups) => {
             log::debug!("API data: {:.2?}", now.elapsed());
@@ -43,7 +43,9 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
                 date_raised_by_days,
             )
         }
-    }
+    };
+
+    escape_markdown_v2(&msg)
 }
 
 fn mealgroups_to_msg(
@@ -117,7 +119,7 @@ fn mealgroups_to_msg(
         }
     }
 
-    escape_markdown_v2(&msg)
+    msg
 }
 
 async fn get_meals_from_api(requested_date: DateTime<Local>, mensa: u8) -> Result<Vec<MealGroup>> {
