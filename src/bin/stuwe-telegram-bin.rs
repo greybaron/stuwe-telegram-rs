@@ -96,7 +96,13 @@ async fn main() {
     //// DB setup
     check_or_create_db_tables().unwrap();
 
-    let mensen = get_mensen().await.unwrap();
+    let mensen = match get_mensen().await {
+        Ok(mensen) => mensen,
+        Err(e) => {
+            log::error!("Mensa API call failed: {}", e);
+            return;
+        }
+    };
 
     let bot = Bot::new(args.token);
 

@@ -84,7 +84,11 @@ fn mealgroups_to_msg(
             .all(|item| item.price == price_first_meal);
 
         // Bold type of meal (-group)
-        msg += &format!("\n{}\n", markdown::bold(&meal_group.meal_type));
+        msg += &format!(
+            "\n{} {}\n",
+            get_mealgroup_icon(&meal_group.meal_type),
+            markdown::bold(&meal_group.meal_type)
+        );
 
         // loop over meals in meal group
         for sub_meal in &meal_group.sub_meals {
@@ -97,7 +101,7 @@ fn mealgroups_to_msg(
                 msg += &format!("     + {}\n", markdown::italic(ingredient))
             }
             if let Some(allergens) = sub_meal.allergens.as_ref() {
-                msg += &format!("    ℹ️ {}\n", allergens)
+                msg += &format!("    ⓘ {}\n", allergens)
             }
             // appending price
             if !price_is_shared {
@@ -109,7 +113,7 @@ fn mealgroups_to_msg(
                 for variation in variations {
                     msg += &format!("       • {}\n", markdown::italic(&variation.name));
                     if let Some(allergens_and_add) = variation.allergens_and_add.as_ref() {
-                        msg += &format!("         ℹ️ {}\n", allergens_and_add)
+                        msg += &format!("         ⓘ {}\n", allergens_and_add)
                     }
                 }
             }
@@ -120,6 +124,21 @@ fn mealgroups_to_msg(
     }
 
     msg
+}
+
+fn get_mealgroup_icon(meal_name: &str) -> &'static str {
+    match meal_name.to_lowercase().as_str() {
+        s if s.contains("vegan") => "🌱",
+        s if s.contains("vegetarisch") => "🧀",
+        s if s.contains("fleisch") => "🍗",
+        s if s.contains("grill") => "🍔",
+        s if s.contains("fisch") => "🐟",
+        s if s.contains("pastateller") => "🍝",
+        s if s.contains("gemüse") => "🥕",
+        s if s.contains("sättigung") => "➕",
+        s if s.contains("schneller teller") => "♿️",
+        _ => "🍽️",
+    }
 }
 
 async fn get_meals_from_api(requested_date: DateTime<Local>, mensa: u8) -> Result<Vec<MealGroup>> {

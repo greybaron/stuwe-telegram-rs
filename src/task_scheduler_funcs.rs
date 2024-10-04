@@ -265,7 +265,7 @@ pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -
 
     // Turns the response into a WebSocket stream.
     let mut websocket = response.into_websocket().await?;
-    log::info!("WebSocket connected");
+    log::info!("MensaUpdate WebSocket connected");
 
     while let Some(message) = websocket.try_next().await? {
         if let Message::Text(text) = message {
