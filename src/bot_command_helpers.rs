@@ -1,10 +1,9 @@
 use crate::constants::{NO_DB_MSG, OLLAMA_HOST, OLLAMA_MODEL};
 use crate::data_types::{
-    HandlerResult, JobHandlerTask, MensaKeyboardAction, ParsedTimeAndLastMsgFromDialleougueue,
-    RegistrationEntry, TimeParseError,
+    HandlerResult, MensaKeyboardAction, ParsedTimeAndLastMsgFromDialleougueue, TimeParseError,
 };
 
-use crate::shared_main::{make_mensa_keyboard, make_query_data};
+use crate::shared_main::{get_user_registration, make_mensa_keyboard};
 
 use regex_lite::Regex;
 use serde::{Deserialize, Serialize};
@@ -14,22 +13,14 @@ use teloxide::types::InputFile;
 
 use std::collections::BTreeMap;
 use teloxide::prelude::*;
-use tokio::sync::broadcast;
 
 pub async fn mensa_disp_or_upd(
     bot: Bot,
     msg: Message,
     mensen: BTreeMap<u8, String>,
-    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
     disp_or_update: MensaKeyboardAction,
 ) -> HandlerResult {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
-    jobhandler_task_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if user_registration_data_rx.recv().await.unwrap().is_some() {
+    if get_user_registration(msg.chat.id.0).is_some() {
         let keyboard = make_mensa_keyboard(mensen, disp_or_update);
         bot.send_message(msg.chat.id, "Mensa auswählen:")
             .reply_markup(keyboard)

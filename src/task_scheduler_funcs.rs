@@ -19,38 +19,39 @@ use crate::{
         compare_campusdual_grades, compare_campusdual_signup_options, get_campusdual_data,
         save_campusdual_grades, save_campusdual_signup_options,
     },
-    constants::{API_URL, BACKEND, CD_DATA, NO_DB_MSG},
+    constants::{API_URL, BACKEND, CD_DATA, NO_DB_MSG, USER_REGISTRATIONS},
     data_types::{Backend, BroadcastUpdateTask, JobHandlerTask, JobType, RegistrationEntry},
     db_operations::{
         get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
     },
-    shared_main::{build_meal_message_dispatcher, load_job},
+    shared_main::{
+        build_meal_message_dispatcher, get_user_registration, insert_user_registration, load_job,
+    },
 };
 
 pub async fn handle_add_registration_task(
     bot: &Bot,
     job_handler_task: JobHandlerTask,
     sched: &JobScheduler,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
     log::info!(
         "Register: {} for Mensa {}",
         &job_handler_task.chat_id.unwrap(),
         &job_handler_task.mensa_id.unwrap()
     );
-    // creates a new row, or replaces every col with new values
+    // create or update row in db
     init_db_record(&job_handler_task).unwrap();
-    if let Some(previous_registration) = loaded_user_data.get(&job_handler_task.chat_id.unwrap()) {
-        if let Some(uuid) = previous_registration.job_uuid {
-            sched.context.job_delete_tx.send(uuid).unwrap();
-        };
+    if let Some(uuid) =
+        get_user_registration(job_handler_task.chat_id.unwrap()).and_then(|reg| reg.job_uuid)
+    {
+        sched.context.job_delete_tx.send(uuid).unwrap();
     }
 
     // get uuid (here guaranteed to be Some() since default is registration with job)
     let new_uuid = load_job(bot.clone(), sched, job_handler_task.clone()).await;
 
     // insert new job uuid
-    loaded_user_data.insert(
+    insert_user_registration(
         job_handler_task.chat_id.unwrap(),
         RegistrationEntry {
             job_uuid: new_uuid,
@@ -65,7 +66,6 @@ pub async fn handle_update_registration_task(
     bot: &Bot,
     job_handler_task: JobHandlerTask,
     sched: &JobScheduler,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
     if let Some(mensa) = job_handler_task.mensa_id {
         log::info!("{} 📌 to {}", job_handler_task.chat_id.unwrap(), mensa);
@@ -79,12 +79,11 @@ pub async fn handle_update_registration_task(
         );
     }
 
-    if let Some(previous_registration) = loaded_user_data.get(&job_handler_task.chat_id.unwrap()) {
-        let mensa_id = job_handler_task
-            .mensa_id
-            .unwrap_or(previous_registration.mensa_id);
-        let hour = job_handler_task.hour.or(previous_registration.hour);
-        let minute = job_handler_task.minute.or(previous_registration.minute);
+    // reuse old data for unset fields, as the entire row is replaced
+    if let Some(registration) = get_user_registration(job_handler_task.chat_id.unwrap()) {
+        let mensa_id = job_handler_task.mensa_id.unwrap_or(registration.mensa_id);
+        let hour = job_handler_task.hour.or(registration.hour);
+        let minute = job_handler_task.minute.or(registration.minute);
 
         let new_job_task = JobHandlerTask {
             job_type: JobType::UpdateRegistration,
@@ -97,7 +96,7 @@ pub async fn handle_update_registration_task(
         let new_uuid =
             // new time was passed -> unload old job, load new
             if job_handler_task.hour.is_some() || job_handler_task.minute.is_some() || job_handler_task.mensa_id.is_some() {
-                if let Some(uuid) = previous_registration.job_uuid {
+                if let Some(uuid) = registration.job_uuid {
                     // unload old job if exists
                     sched.context.job_delete_tx.send(uuid).unwrap();
                 }
@@ -109,10 +108,10 @@ pub async fn handle_update_registration_task(
                 ).await
             } else {
                 // no new time was set -> return old job uuid
-                previous_registration.job_uuid
+                registration.job_uuid
             };
 
-        loaded_user_data.insert(
+        insert_user_registration(
             job_handler_task.chat_id.unwrap(),
             RegistrationEntry {
                 job_uuid: new_uuid,
@@ -135,31 +134,27 @@ pub async fn handle_update_registration_task(
 pub async fn handle_delete_registration_task(
     job_handler_task: JobHandlerTask,
     sched: &JobScheduler,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
 ) {
     log::info!("Unregister: {}", &job_handler_task.chat_id.unwrap());
 
     // unregister is only invoked if existence of job is guaranteed
-    let previous_registration = loaded_user_data
-        .get(&job_handler_task.chat_id.unwrap())
-        .unwrap();
+    let registration = get_user_registration(job_handler_task.chat_id.unwrap()).unwrap();
 
     // unload old job
     sched
         .context
         .job_delete_tx
-        .send(previous_registration.job_uuid.unwrap())
+        .send(registration.job_uuid.unwrap())
         .unwrap();
 
     // kill uuid from this thing
-    loaded_user_data.insert(
+    insert_user_registration(
         job_handler_task.chat_id.unwrap(),
         RegistrationEntry {
             job_uuid: None,
-            mensa_id: previous_registration.mensa_id,
+            mensa_id: registration.mensa_id,
             hour: None,
             minute: None,
-            // last_markup_id,
         },
     );
 
@@ -167,36 +162,14 @@ pub async fn handle_delete_registration_task(
     task_db_kill_auto(job_handler_task.chat_id.unwrap()).unwrap();
 }
 
-pub async fn handle_query_registration_task(
-    job_handler_task: JobHandlerTask,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
-    user_registration_data_tx: Sender<Option<RegistrationEntry>>,
-) {
-    // check if uuid exists
-    let opt_registration_entry = loaded_user_data.get(&job_handler_task.chat_id.unwrap());
-    if opt_registration_entry.is_none() {
-        log::warn!(
-            "chat_id {} has no registration",
-            &job_handler_task.chat_id.unwrap()
-        );
-    }
-
-    user_registration_data_tx
-        .send(opt_registration_entry.copied())
-        .unwrap();
-}
-
-pub async fn handle_broadcast_update_task(
-    bot: &Bot,
-    job_handler_task: JobHandlerTask,
-    loaded_user_data: &mut BTreeMap<i64, RegistrationEntry>,
-) {
-    dbg!();
+pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandlerTask) {
     log::info!(
         "TodayMeals changed @Mensa {}",
         &job_handler_task.mensa_id.unwrap()
     );
-    for (chat_id, registration_data) in loaded_user_data {
+
+    let workaround = USER_REGISTRATIONS.get().unwrap().read().unwrap().clone();
+    for (chat_id, registration_data) in workaround {
         let mensa_id = registration_data.mensa_id;
 
         let now = chrono::Local::now();
@@ -217,7 +190,7 @@ pub async fn handle_broadcast_update_task(
                     build_meal_message_dispatcher(0, mensa_id).await
                 );
 
-                bot.send_message(ChatId(*chat_id), text)
+                bot.send_message(ChatId(chat_id), text)
                     .parse_mode(ParseMode::MarkdownV2)
                     .await
                     .unwrap();

@@ -8,22 +8,22 @@ use stuwe_telegram_rs::bot_command_handlers::{
     start_time_dialogue, subscribe, unsubscribe,
 };
 use stuwe_telegram_rs::constants::{
-    BACKEND, CD_DATA, DB_FILENAME, MENSI_DB, OLLAMA_HOST, OLLAMA_MODEL,
+    BACKEND, CD_DATA, DB_FILENAME, MENSI_DB, OLLAMA_HOST, OLLAMA_MODEL, USER_REGISTRATIONS,
 };
 
 use stuwe_telegram_rs::data_types::{
     Backend, Command, DialogueState, JobHandlerTask, JobHandlerTaskType, JobType,
-    QueryRegistrationType, RegistrationEntry,
 };
 use stuwe_telegram_rs::db_operations::check_or_create_db_tables;
 use stuwe_telegram_rs::shared_main::callback_handler;
 use stuwe_telegram_rs::task_scheduler_funcs::{
-    handle_add_registration_task, handle_delete_registration_task, handle_query_registration_task,
-    handle_update_registration_task, load_jobs_from_db, start_mensaupd_hook_and_campusdual_job,
+    handle_add_registration_task, handle_delete_registration_task, handle_update_registration_task,
+    load_jobs_from_db, start_mensaupd_hook_and_campusdual_job,
 };
 
 use clap::Parser;
 use std::env;
+use std::sync::RwLock;
 use teloxide::{
     dispatching::{
         dialogue::{self, InMemStorage},
@@ -98,7 +98,6 @@ async fn main() {
     let bot = Bot::new(args.token);
 
     let (jobhandler_task_tx, jobhandler_task_rx): JobHandlerTaskType = broadcast::channel(10);
-    let (user_registration_data_tx, _): QueryRegistrationType = broadcast::channel(10);
 
     // every user has a mensa_id, but only users with auto send have a job_uuid inside RegistrEntry
     {
@@ -106,16 +105,9 @@ async fn main() {
         // there is effectively only one tx and rx, however since rx cant be passed as dptree dep (?!),
         // tx has to be cloned and passed to both (inside command_handler it will be resubscribed to rx)
         let jobhandler_task_tx = jobhandler_task_tx.clone();
-        let user_registration_data_tx = user_registration_data_tx.clone();
         tokio::spawn(async move {
             log::info!("Starting task scheduler...");
-            run_task_scheduler(
-                bot,
-                jobhandler_task_tx,
-                jobhandler_task_rx,
-                user_registration_data_tx,
-            )
-            .await;
+            run_task_scheduler(bot, jobhandler_task_tx, jobhandler_task_rx).await;
         });
     }
 
@@ -123,8 +115,7 @@ async fn main() {
     let command_handler_deps = dptree::deps![
         InMemStorage::<DialogueState>::new(),
         mensen,
-        jobhandler_task_tx,
-        user_registration_data_tx
+        jobhandler_task_tx
     ];
     Dispatcher::builder(bot, schema())
         .dependencies(command_handler_deps)
@@ -164,13 +155,15 @@ async fn run_task_scheduler(
     bot: Bot,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
     mut jobhandler_task_rx: broadcast::Receiver<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) {
     let sched = JobScheduler::new().await.unwrap();
 
     start_mensaupd_hook_and_campusdual_job(bot.clone(), &sched, jobhandler_task_tx).await;
 
-    let mut loaded_user_data = load_jobs_from_db(&bot, &sched).await;
+    let user_registrations = load_jobs_from_db(&bot, &sched).await;
+    USER_REGISTRATIONS
+        .set(RwLock::new(user_registrations))
+        .unwrap();
 
     // start scheduler (non blocking)
     sched.start().await.unwrap();
@@ -181,32 +174,15 @@ async fn run_task_scheduler(
     while let Ok(job_handler_task) = jobhandler_task_rx.recv().await {
         match job_handler_task.job_type {
             JobType::Register => {
-                handle_add_registration_task(&bot, job_handler_task, &sched, &mut loaded_user_data)
-                    .await;
+                handle_add_registration_task(&bot, job_handler_task, &sched).await;
             }
 
             JobType::UpdateRegistration => {
-                handle_update_registration_task(
-                    &bot,
-                    job_handler_task,
-                    &sched,
-                    &mut loaded_user_data,
-                )
-                .await;
+                handle_update_registration_task(&bot, job_handler_task, &sched).await;
             }
 
             JobType::DeleteRegistration => {
-                handle_delete_registration_task(job_handler_task, &sched, &mut loaded_user_data)
-                    .await;
-            }
-
-            JobType::QueryRegistration => {
-                handle_query_registration_task(
-                    job_handler_task,
-                    &mut loaded_user_data,
-                    user_registration_data_tx.clone(),
-                )
-                .await;
+                handle_delete_registration_task(job_handler_task, &sched).await;
             }
 
             JobType::BroadcastUpdate => {

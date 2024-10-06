@@ -1,8 +1,12 @@
-use std::sync::OnceLock;
+use std::{
+    collections::BTreeMap,
+    sync::{OnceLock, RwLock},
+};
 
-use crate::data_types::{Backend, CampusDualData};
+use crate::data_types::{Backend, CampusDualData, RegistrationEntry};
 
 pub static API_URL: OnceLock<String> = OnceLock::new();
+pub static USER_REGISTRATIONS: OnceLock<RwLock<BTreeMap<i64, RegistrationEntry>>> = OnceLock::new();
 
 pub const NO_DB_MSG: &str = "Bitte zuerst /start ausführen";
 pub const MENSI_DB: &str = "mensimates.sqlite";

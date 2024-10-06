@@ -15,20 +15,29 @@ use tokio_cron_scheduler::{Job, JobScheduler};
 use uuid::Uuid;
 
 use crate::{
-    constants::{BACKEND, NO_DB_MSG},
+    constants::{BACKEND, NO_DB_MSG, USER_REGISTRATIONS},
     data_backend::{mm_parser::mm_build_meal_msg, stuwe_parser::stuwe_build_meal_msg},
-    data_types::{
-        Backend, Command, MensaKeyboardAction, QueryRegistrationTask, RegisterTask,
-        UpdateRegistrationTask,
-    },
+    data_types::{Backend, Command, MensaKeyboardAction, RegisterTask, UpdateRegistrationTask},
 };
 use crate::{
     data_types::{JobHandlerTask, RegistrationEntry},
     db_operations::update_db_row,
 };
 
-pub fn make_query_data(chat_id: i64) -> JobHandlerTask {
-    QueryRegistrationTask { chat_id }.into()
+pub fn get_user_registration(chat_id: i64) -> Option<RegistrationEntry> {
+    let user_data = USER_REGISTRATIONS
+        .get()
+        .and_then(|data| data.read().unwrap().get(&chat_id).copied());
+    user_data
+}
+
+pub fn insert_user_registration(chat_id: i64, entry: RegistrationEntry) {
+    USER_REGISTRATIONS
+        .get()
+        .unwrap()
+        .write()
+        .unwrap()
+        .insert(chat_id, entry);
 }
 
 pub fn make_mensa_keyboard(
@@ -125,10 +134,7 @@ pub async fn callback_handler(
     q: CallbackQuery,
     mensen: BTreeMap<u8, String>,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
     if let Some(q_data) = q.data {
         // acknowledge callback query to remove the loading alert
         bot.answer_callback_query(q.id).await?;
@@ -155,8 +161,6 @@ pub async fn callback_handler(
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                     )
                     .await;
-
-                    jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
 
                     bot.send_message(chat.id, text)
                         .parse_mode(ParseMode::MarkdownV2)
@@ -228,9 +232,7 @@ pub async fn callback_handler(
                     jobhandler_task_tx.send(task).unwrap();
                 }
                 "day" => {
-                    jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
-                    let prev_reg_opt = user_registration_data_rx.recv().await.unwrap();
-                    if let Some(prev_registration) = prev_reg_opt {
+                    if let Some(registration) = get_user_registration(chat.id.0) {
                         // start building message
                         let now = Instant::now();
 
@@ -239,12 +241,10 @@ pub async fn callback_handler(
                             [usize::try_from(days_forward).unwrap()];
 
                         let text =
-                            build_meal_message_dispatcher(days_forward, prev_registration.mensa_id)
+                            build_meal_message_dispatcher(days_forward, registration.mensa_id)
                                 .await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
-
-                        jobhandler_task_tx.send(make_query_data(chat.id.0)).unwrap();
 
                         bot.send_message(chat.id, text)
                             .parse_mode(ParseMode::MarkdownV2)

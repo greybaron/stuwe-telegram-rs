@@ -54,11 +54,6 @@ pub type JobHandlerTaskType = (
     broadcast::Receiver<JobHandlerTask>,
 );
 
-pub type QueryRegistrationType = (
-    broadcast::Sender<Option<RegistrationEntry>>,
-    broadcast::Receiver<Option<RegistrationEntry>>,
-);
-
 pub enum MensaKeyboardAction {
     Register,
     Update,
@@ -70,7 +65,6 @@ pub enum MensaKeyboardAction {
 pub enum JobType {
     Register,
     DeleteRegistration,
-    QueryRegistration,
     UpdateRegistration,
     BroadcastUpdate,
 }
@@ -109,21 +103,6 @@ impl From<UnregisterTask> for JobHandlerTask {
     fn from(job: UnregisterTask) -> Self {
         JobHandlerTask {
             job_type: JobType::DeleteRegistration,
-            chat_id: Some(job.chat_id),
-            mensa_id: None,
-            hour: None,
-            minute: None,
-        }
-    }
-}
-
-pub struct QueryRegistrationTask {
-    pub chat_id: i64,
-}
-impl From<QueryRegistrationTask> for JobHandlerTask {
-    fn from(job: QueryRegistrationTask) -> Self {
-        JobHandlerTask {
-            job_type: JobType::QueryRegistration,
             chat_id: Some(job.chat_id),
             mensa_id: None,
             hour: None,

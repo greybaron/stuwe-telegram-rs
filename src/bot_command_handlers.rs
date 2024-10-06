@@ -4,11 +4,11 @@ use crate::bot_command_helpers::{
 use crate::constants::NO_DB_MSG;
 use crate::data_types::{
     Command, DialogueState, DialogueType, HandlerResult, JobHandlerTask, MensaKeyboardAction,
-    RegistrationEntry, UnregisterTask, UpdateRegistrationTask,
+    UnregisterTask, UpdateRegistrationTask,
 };
 
 use crate::shared_main::{
-    build_meal_message_dispatcher, make_commands_keyrow, make_mensa_keyboard, make_query_data,
+    build_meal_message_dispatcher, get_user_registration, make_commands_keyrow, make_mensa_keyboard,
 };
 use rand::Rng;
 use std::{collections::BTreeMap, time::Instant};
@@ -30,15 +30,7 @@ pub async fn invalid_cmd(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
-pub async fn day_cmd(
-    bot: Bot,
-    msg: Message,
-    cmd: Command,
-    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
-) -> HandlerResult {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
+pub async fn day_cmd(bot: Bot, msg: Message, cmd: Command) -> HandlerResult {
     let days_forward = match cmd {
         Command::Heute => 0,
         Command::Morgen => 1,
@@ -46,11 +38,7 @@ pub async fn day_cmd(
         _ => unreachable!(),
     };
 
-    jobhandler_task_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-
-    if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
+    if let Some(registration) = get_user_registration(msg.chat.id.0) {
         let text = build_meal_message_dispatcher(days_forward, registration.mensa_id).await;
         let now = Instant::now();
 
@@ -74,32 +62,16 @@ pub async fn show_different_mensa(
     bot: Bot,
     msg: Message,
     mensen: BTreeMap<u8, String>,
-    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {
-    mensa_disp_or_upd(
-        bot,
-        msg,
-        mensen,
-        jobhandler_task_tx,
-        user_registration_data_tx,
-        MensaKeyboardAction::DisplayOnce,
-    )
-    .await
+    mensa_disp_or_upd(bot, msg, mensen, MensaKeyboardAction::DisplayOnce).await
 }
 
 pub async fn subscribe(
     bot: Bot,
     msg: Message,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
-    jobhandler_task_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
+    if let Some(registration) = get_user_registration(msg.chat.id.0) {
         if registration.job_uuid.is_some() {
             if rand::thread_rng().gen_range(0..10) == 0 {
                 send_bloat_image(&bot, msg.chat.id).await;
@@ -138,14 +110,8 @@ pub async fn unsubscribe(
     bot: Bot,
     msg: Message,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
-    jobhandler_task_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-    if let Some(registration) = user_registration_data_rx.recv().await.unwrap() {
+    if let Some(registration) = get_user_registration(msg.chat.id.0) {
         if registration.job_uuid.is_none() {
             bot.send_message(
                 msg.chat.id,
@@ -171,22 +137,8 @@ pub async fn unsubscribe(
     Ok(())
 }
 
-pub async fn change_mensa(
-    bot: Bot,
-    msg: Message,
-    mensen: BTreeMap<u8, String>,
-    jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
-) -> HandlerResult {
-    mensa_disp_or_upd(
-        bot,
-        msg,
-        mensen,
-        jobhandler_task_tx,
-        user_registration_data_tx,
-        MensaKeyboardAction::Update,
-    )
-    .await
+pub async fn change_mensa(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
+    mensa_disp_or_upd(bot, msg, mensen, MensaKeyboardAction::Update).await
 }
 
 pub async fn start_time_dialogue(
@@ -194,15 +146,8 @@ pub async fn start_time_dialogue(
     msg: Message,
     dialogue: DialogueType,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
-    user_registration_data_tx: broadcast::Sender<Option<RegistrationEntry>>,
 ) -> HandlerResult {
-    let mut user_registration_data_rx = user_registration_data_tx.subscribe();
-
-    jobhandler_task_tx
-        .send(make_query_data(msg.chat.id.0))
-        .unwrap();
-
-    if user_registration_data_rx.recv().await.unwrap().is_none() {
+    if get_user_registration(msg.chat.id.0).is_none() {
         bot.send_message(msg.chat.id, NO_DB_MSG).await.unwrap();
         dialogue.exit().await.unwrap();
         return Ok(());
