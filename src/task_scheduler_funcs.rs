@@ -8,7 +8,6 @@ use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
     types::{ChatId, ParseMode},
-    utils::markdown,
     Bot,
 };
 use tokio::{sync::broadcast::Sender, time::sleep};
@@ -20,13 +19,14 @@ use crate::{
         save_campusdual_grades, save_campusdual_signup_options,
     },
     constants::{API_URL, BACKEND, CD_DATA, NO_DB_MSG, USER_REGISTRATIONS},
-    data_types::{Backend, BroadcastUpdateTask, JobHandlerTask, JobType, RegistrationEntry},
+    data_backend::stuwe_parser::stuwe_build_diff_msg,
+    data_types::{
+        Backend, BroadcastUpdateTask, JobHandlerTask, RegistrationEntry, UpdateRegistrationTask,
+    },
     db_operations::{
         get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
     },
-    shared_main::{
-        build_meal_message_dispatcher, get_user_registration, insert_user_registration, load_job,
-    },
+    shared_main::{get_user_registration, insert_user_registration, load_job},
 };
 
 pub async fn handle_add_registration_task(
@@ -85,9 +85,8 @@ pub async fn handle_update_registration_task(
         let hour = job_handler_task.hour.or(registration.hour);
         let minute = job_handler_task.minute.or(registration.minute);
 
-        let new_job_task = JobHandlerTask {
-            job_type: JobType::UpdateRegistration,
-            chat_id: job_handler_task.chat_id,
+        let new_job_task = UpdateRegistrationTask {
+            chat_id: job_handler_task.chat_id.unwrap(),
             mensa_id: Some(mensa_id),
             hour,
             minute,
@@ -104,7 +103,7 @@ pub async fn handle_update_registration_task(
                 load_job(
                     bot.clone(),
                     sched,
-                    new_job_task.clone(),
+                    new_job_task.into(),
                 ).await
             } else {
                 // no new time was set -> return old job uuid
@@ -165,12 +164,14 @@ pub async fn handle_delete_registration_task(
 pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandlerTask) {
     log::info!(
         "TodayMeals changed @Mensa {}",
-        &job_handler_task.mensa_id.unwrap()
+        &job_handler_task.meals_diff.as_ref().unwrap().canteen_id
     );
+
+    let diff = job_handler_task.meals_diff.unwrap();
 
     let workaround = USER_REGISTRATIONS.get().unwrap().read().unwrap().clone();
     for (chat_id, registration_data) in workaround {
-        let mensa_id = registration_data.mensa_id;
+        let canteen_id = registration_data.mensa_id;
 
         let now = chrono::Local::now();
 
@@ -178,17 +179,13 @@ pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandle
             (registration_data.hour, registration_data.minute)
         {
             // send update to all subscribers of this mensa id
-            if mensa_id == job_handler_task.mensa_id.unwrap()
+            if canteen_id == diff.canteen_id
                         // only send updates after job message has been sent: job hour has to be earlier OR same hour, earlier minute
                         && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
             {
                 log::info!("Sent update to {}", chat_id);
 
-                let text = format!(
-                    "{}\n{}",
-                    &markdown::bold(&markdown::underline("Planänderung:")),
-                    build_meal_message_dispatcher(0, mensa_id).await
-                );
+                let text = stuwe_build_diff_msg(&diff).await;
 
                 bot.send_message(ChatId(chat_id), text)
                     .parse_mode(ParseMode::MarkdownV2)
@@ -228,10 +225,10 @@ pub async fn start_mensaupd_hook_and_campusdual_job(
     .unwrap();
     sched.add(cache_and_broadcast_job).await.unwrap();
 }
-//todo remove pub
-pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -> Result<()> {
+
+async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -> Result<()> {
     let response = Client::default()
-        .get(format!("{}/today_updated_ws", API_URL.get().unwrap()))
+        .get(format!("{}/today_updated_diff_ws", API_URL.get().unwrap()))
         .upgrade() // Prepares the WebSocket upgrade.
         .send()
         .await?;
@@ -244,7 +241,7 @@ pub async fn await_handle_mealplan_upd(job_handler_tx: Sender<JobHandlerTask>) -
         if let Message::Text(text) = message {
             job_handler_tx.send(
                 BroadcastUpdateTask {
-                    mensa_id: text.parse().unwrap(),
+                    meals_diff: serde_json::from_str(&text)?,
                 }
                 .into(),
             )?;

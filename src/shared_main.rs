@@ -41,7 +41,7 @@ pub fn insert_user_registration(chat_id: i64, entry: RegistrationEntry) {
 }
 
 pub fn make_mensa_keyboard(
-    mensen: BTreeMap<u8, String>,
+    mensen: BTreeMap<u32, String>,
     action: MensaKeyboardAction,
 ) -> InlineKeyboardMarkup {
     let mut keyboard = Vec::new();
@@ -79,7 +79,7 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
     KeyboardMarkup::new(keyboard).resize_keyboard()
 }
 
-pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u8) -> String {
+pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u32) -> String {
     match BACKEND.get().unwrap() {
         Backend::MensiMates => mm_build_meal_msg(days_forward, mensa_location).await,
         Backend::StuWe => stuwe_build_meal_msg(days_forward, mensa_location).await,
@@ -132,7 +132,7 @@ pub async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> O
 pub async fn callback_handler(
     bot: Bot,
     q: CallbackQuery,
-    mensen: BTreeMap<u8, String>,
+    mensen: BTreeMap<u32, String>,
     jobhandler_task_tx: broadcast::Sender<JobHandlerTask>,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let Some(q_data) = q.data {

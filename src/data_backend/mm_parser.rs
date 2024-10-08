@@ -7,7 +7,7 @@ use rand::Rng;
 use std::{collections::BTreeMap, time::Instant};
 use teloxide::utils::markdown;
 
-pub async fn get_mensen() -> Result<BTreeMap<u8, String>> {
+pub async fn get_mensen() -> Result<BTreeMap<u32, String>> {
     let mut mensen = BTreeMap::new();
     let client = reqwest::Client::new();
     let res = client
@@ -23,7 +23,7 @@ pub async fn get_mensen() -> Result<BTreeMap<u8, String>> {
 
 async fn mm_get_meals_at_mensa_at_day(
     date: &DateTime<Local>,
-    mensa_id: u8,
+    mensa_id: u32,
 ) -> Result<Vec<MensiMeal>> {
     let client = reqwest::Client::new();
     let date_str = format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
@@ -43,7 +43,7 @@ async fn mm_get_meals_at_mensa_at_day(
     Ok(resp.json::<Vec<MensiMeal>>().await?)
 }
 
-pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
+pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String {
     let mut msg: String = String::new();
 
     // get requested date

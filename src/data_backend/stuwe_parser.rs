@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::constants::API_URL;
 use crate::data_backend::{escape_markdown_v2, german_date_fmt, EMOJIS};
-use crate::data_types::stuwe_data_types::MealGroup;
+use crate::data_types::stuwe_data_types::{CanteenMealDiff, MealGroup};
 
 use anyhow::Result;
 use chrono::{DateTime, Datelike, Duration, Local, Weekday};
@@ -10,7 +10,7 @@ use rand::Rng;
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
-pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> String {
+pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> String {
     // get requested date
     let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
     let mut date_raised_by_days = 0;
@@ -30,35 +30,11 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u8) -> Stri
         }
     }
 
-    // retrieve meals
-    let now = Instant::now();
-    let msg = match get_meals_from_api(requested_date, mensa_location).await {
-        Err(_) => "Ein Fehler ist aufgetreten.".to_string(),
-        Ok(meal_groups) => {
-            log::debug!("API data: {:.2?}", now.elapsed());
-            mealgroups_to_msg(
-                meal_groups,
-                requested_date,
-                days_forward,
-                date_raised_by_days,
-            )
-        }
-    };
-
-    escape_markdown_v2(&msg)
-}
-
-fn mealgroups_to_msg(
-    meal_groups: Vec<MealGroup>,
-    requested_date: DateTime<Local>,
-    days_forward: i64,
-    date_raised_by_days: i32,
-) -> String {
     let mut msg: String = String::new();
     // start message formatting
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
-        "{} {} {}\n",
+        "{} {} {}\n\n",
         rand_emoji,
         german_date_fmt(requested_date.date_naive()),
         rand_emoji,
@@ -71,9 +47,63 @@ fn mealgroups_to_msg(
         msg += &markdown::italic("      (Übermorgen)\n")
     }
 
-    if meal_groups.is_empty() {
-        msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+    // retrieve meals
+    let now = Instant::now();
+    match get_meals_from_api(requested_date, mensa_location).await {
+        Err(_) => msg = "Ein Fehler ist aufgetreten.".to_string(),
+        Ok(meal_groups) => {
+            log::debug!("API data: {:.2?}", now.elapsed());
+
+            if meal_groups.is_empty() {
+                msg += &markdown::bold("\nkeine Daten vorhanden.\n");
+            } else {
+                msg += &mealgroups_to_msg(&meal_groups);
+            }
+        }
+    };
+
+    escape_markdown_v2(&msg)
+}
+
+pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
+    let mut msg = markdown::bold(&markdown::underline("Planänderung\n")).to_string();
+    if let Some(new_meals) = diff.new_meals.as_ref() {
+        msg += &markdown::bold(&markdown::underline(if new_meals.len() == 1 {
+            "\nNeues Gericht:"
+        } else {
+            "\nNeue Gerichte:"
+        }));
+        msg += &mealgroups_to_msg(new_meals);
+        msg += "\n";
     }
+    if let Some(modified_meals) = diff.modified_meals.as_ref() {
+        msg += &markdown::bold(&markdown::underline(if modified_meals.len() == 1 {
+            "\nGeändertes Gericht:"
+        } else {
+            "\nGeänderte Gerichte:"
+        }));
+        msg += &mealgroups_to_msg(modified_meals);
+        msg += "\n";
+    }
+
+    if let Some(removed_meals) = diff.removed_meals.as_ref() {
+        msg += &markdown::bold(&markdown::underline(if removed_meals.len() == 1 {
+            "\nEntferntes Gericht:"
+        } else {
+            "\nEntfernte Gerichte:"
+        }));
+        for rem_meal in removed_meals {
+            for sub_meal in &rem_meal.sub_meals {
+                msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+            }
+        }
+    }
+
+    escape_markdown_v2(msg.trim_end())
+}
+
+fn mealgroups_to_msg(meal_groups: &[MealGroup]) -> String {
+    let mut msg: String = String::new();
 
     // loop over meal groups
     for meal_group in meal_groups {
@@ -141,7 +171,7 @@ fn get_mealgroup_icon(meal_name: &str) -> &'static str {
     }
 }
 
-async fn get_meals_from_api(requested_date: DateTime<Local>, mensa: u8) -> Result<Vec<MealGroup>> {
+async fn get_meals_from_api(requested_date: DateTime<Local>, mensa: u32) -> Result<Vec<MealGroup>> {
     let date_str = build_date_string(requested_date);
     let client = reqwest::Client::new();
     let meal_groups = client
@@ -169,12 +199,12 @@ fn build_date_string(requested_date: DateTime<Local>) -> String {
     format!("{:04}-{:02}-{:02}", year, month, day)
 }
 
-pub async fn get_mensen() -> Result<BTreeMap<u8, String>> {
+pub async fn get_mensen() -> Result<BTreeMap<u32, String>> {
     let client = reqwest::Client::new();
 
     #[derive(serde::Deserialize)]
     struct Mensa {
-        id: u8,
+        id: u32,
         name: String,
     }
 

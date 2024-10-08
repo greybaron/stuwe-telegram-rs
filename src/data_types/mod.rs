@@ -2,6 +2,7 @@ pub mod mm_data_types;
 pub mod stuwe_data_types;
 
 use serde::{Deserialize, Serialize};
+use stuwe_data_types::CanteenMealDiff;
 use teloxide::{
     dispatching::dialogue::InMemStorage, prelude::Dialogue, types::MessageId,
     utils::command::BotCommands,
@@ -73,14 +74,15 @@ pub enum JobType {
 pub struct JobHandlerTask {
     pub job_type: JobType,
     pub chat_id: Option<i64>,
-    pub mensa_id: Option<u8>,
+    pub mensa_id: Option<u32>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
+    pub meals_diff: Option<CanteenMealDiff>,
 }
 
 pub struct RegisterTask {
     pub chat_id: i64,
-    pub mensa_id: u8,
+    pub mensa_id: u32,
     pub hour: u32,
     pub minute: u32,
 }
@@ -92,6 +94,7 @@ impl From<RegisterTask> for JobHandlerTask {
             mensa_id: Some(job.mensa_id),
             hour: Some(job.hour),
             minute: Some(job.minute),
+            meals_diff: None,
         }
     }
 }
@@ -107,13 +110,15 @@ impl From<UnregisterTask> for JobHandlerTask {
             mensa_id: None,
             hour: None,
             minute: None,
+            meals_diff: None,
         }
     }
 }
 
+#[derive(Clone)]
 pub struct UpdateRegistrationTask {
     pub chat_id: i64,
-    pub mensa_id: Option<u8>,
+    pub mensa_id: Option<u32>,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
 }
@@ -125,21 +130,23 @@ impl From<UpdateRegistrationTask> for JobHandlerTask {
             mensa_id: job.mensa_id,
             hour: job.hour,
             minute: job.minute,
+            meals_diff: None,
         }
     }
 }
 
 pub struct BroadcastUpdateTask {
-    pub mensa_id: u8,
+    pub meals_diff: CanteenMealDiff,
 }
 impl From<BroadcastUpdateTask> for JobHandlerTask {
     fn from(job: BroadcastUpdateTask) -> Self {
         JobHandlerTask {
             job_type: JobType::BroadcastUpdate,
             chat_id: None,
-            mensa_id: Some(job.mensa_id),
+            mensa_id: None,
             hour: None,
             minute: None,
+            meals_diff: Some(job.meals_diff),
         }
     }
 }
@@ -147,7 +154,7 @@ impl From<BroadcastUpdateTask> for JobHandlerTask {
 #[derive(Debug, Copy, Clone)]
 pub struct RegistrationEntry {
     pub job_uuid: Option<Uuid>,
-    pub mensa_id: u8,
+    pub mensa_id: u32,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
 }

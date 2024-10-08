@@ -17,7 +17,7 @@ use teloxide::prelude::*;
 pub async fn mensa_disp_or_upd(
     bot: Bot,
     msg: Message,
-    mensen: BTreeMap<u8, String>,
+    mensen: BTreeMap<u32, String>,
     disp_or_update: MensaKeyboardAction,
 ) -> HandlerResult {
     if get_user_registration(msg.chat.id.0).is_some() {

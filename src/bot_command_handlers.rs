@@ -15,7 +15,7 @@ use std::{collections::BTreeMap, time::Instant};
 use teloxide::{prelude::*, types::ParseMode};
 use tokio::sync::broadcast;
 
-pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
+pub async fn start(bot: Bot, msg: Message, mensen: BTreeMap<u32, String>) -> HandlerResult {
     let keyboard = make_mensa_keyboard(mensen, MensaKeyboardAction::Register);
     bot.send_message(msg.chat.id, "Mensa auswählen:")
         .reply_markup(keyboard)
@@ -61,7 +61,7 @@ pub async fn day_cmd(bot: Bot, msg: Message, cmd: Command) -> HandlerResult {
 pub async fn show_different_mensa(
     bot: Bot,
     msg: Message,
-    mensen: BTreeMap<u8, String>,
+    mensen: BTreeMap<u32, String>,
 ) -> HandlerResult {
     mensa_disp_or_upd(bot, msg, mensen, MensaKeyboardAction::DisplayOnce).await
 }
@@ -137,7 +137,7 @@ pub async fn unsubscribe(
     Ok(())
 }
 
-pub async fn change_mensa(bot: Bot, msg: Message, mensen: BTreeMap<u8, String>) -> HandlerResult {
+pub async fn change_mensa(bot: Bot, msg: Message, mensen: BTreeMap<u32, String>) -> HandlerResult {
     mensa_disp_or_upd(bot, msg, mensen, MensaKeyboardAction::Update).await
 }
 
