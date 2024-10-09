@@ -11,7 +11,7 @@ pub async fn get_mensen() -> Result<BTreeMap<u32, String>> {
     let mut mensen = BTreeMap::new();
     let client = reqwest::Client::new();
     let res = client
-        .get("https://api.olech2412.de/mensaHub/mensa/getMensas")
+        .get("https://api.cyber-biene.de/mensaHub/mensa/getMensas")
         .send()
         .await?;
     for mensa in res.json::<Vec<GetMensasMensa>>().await? {
@@ -31,7 +31,7 @@ async fn mm_get_meals_at_mensa_at_day(
     let now = Instant::now();
     let resp = client
         .get(format!(
-            "https://api.olech2412.de/mensaHub/meal/servingDate/{}/fromMensa/{}",
+            "https://api.cyber-biene.de/mensaHub/meal/servingDate/{}/fromMensa/{}",
             date_str, mensa_id
         ))
         .send()
