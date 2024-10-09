@@ -34,7 +34,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> Str
     // start message formatting
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
-        "{} {} {}\n\n",
+        "{} {} {}\n",
         rand_emoji,
         german_date_fmt(requested_date.date_naive()),
         rand_emoji,
@@ -66,7 +66,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> Str
 }
 
 pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
-    let mut msg = markdown::bold(&markdown::underline("Planänderung\n")).to_string();
+    let mut msg = markdown::bold(&markdown::underline("Planänderung")).to_string();
     if let Some(new_meals) = diff.new_meals.as_ref() {
         msg += &markdown::bold(&markdown::underline(if new_meals.len() == 1 {
             "\nNeues Gericht:"
