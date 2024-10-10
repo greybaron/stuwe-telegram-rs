@@ -59,13 +59,11 @@ pub fn make_mensa_keyboard(
                 &mensa.1
             ),
         )]);
-        // }
     }
     InlineKeyboardMarkup::new(keyboard)
 }
 
 pub fn make_commands_keyrow() -> KeyboardMarkup {
-    // let req = ButtonRequest::
     let keyboard = vec![
         vec![
             KeyboardButton::new("/heute"),

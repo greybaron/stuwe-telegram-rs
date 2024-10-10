@@ -125,7 +125,9 @@ fn mealgroups_to_msg(meal_groups: &[MealGroup], wants_allergens: bool) -> String
         // loop over meals in meal group
         for sub_meal in &meal_group.sub_meals {
             // underlined single or multiple meal name
-            msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+            if !(meal_group.sub_meals.len() == 1 && sub_meal.name == meal_group.meal_type) {
+                msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+            }
 
             // loop over ingredients of meal
             for ingredient in &sub_meal.additional_ingredients {
