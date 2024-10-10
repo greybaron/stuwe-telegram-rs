@@ -10,7 +10,11 @@ use rand::Rng;
 use teloxide::utils::markdown;
 
 use tokio::time::Instant;
-pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> String {
+pub async fn stuwe_build_meal_msg(
+    days_forward: i64,
+    mensa_location: u32,
+    wants_allergens: bool,
+) -> String {
     // get requested date
     let mut requested_date = chrono::Local::now() + Duration::days(days_forward);
     let mut date_raised_by_days = 0;
@@ -57,7 +61,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> Str
             if meal_groups.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
-                msg += &mealgroups_to_msg(&meal_groups);
+                msg += &mealgroups_to_msg(&meal_groups, wants_allergens);
             }
         }
     };
@@ -65,7 +69,7 @@ pub async fn stuwe_build_meal_msg(days_forward: i64, mensa_location: u32) -> Str
     escape_markdown_v2(&msg)
 }
 
-pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
+pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff, wants_allergens: bool) -> String {
     let mut msg = markdown::bold(&markdown::underline("Planänderung")).to_string();
     if let Some(new_meals) = diff.new_meals.as_ref() {
         msg += &markdown::bold(&markdown::underline(if new_meals.len() == 1 {
@@ -73,7 +77,7 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
         } else {
             "\nNeue Gerichte:"
         }));
-        msg += &mealgroups_to_msg(new_meals);
+        msg += &mealgroups_to_msg(new_meals, wants_allergens);
     }
     if let Some(modified_meals) = diff.modified_meals.as_ref() {
         msg += &markdown::bold(&markdown::underline(if modified_meals.len() == 1 {
@@ -81,7 +85,7 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
         } else {
             "\nGeänderte Gerichte:"
         }));
-        msg += &mealgroups_to_msg(modified_meals);
+        msg += &mealgroups_to_msg(modified_meals, wants_allergens);
     }
 
     if let Some(removed_meals) = diff.removed_meals.as_ref() {
@@ -100,7 +104,7 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
     escape_markdown_v2(msg.trim_end())
 }
 
-fn mealgroups_to_msg(meal_groups: &[MealGroup]) -> String {
+fn mealgroups_to_msg(meal_groups: &[MealGroup], wants_allergens: bool) -> String {
     let mut msg: String = String::new();
 
     // loop over meal groups
@@ -128,8 +132,10 @@ fn mealgroups_to_msg(meal_groups: &[MealGroup]) -> String {
                 // appending ingredient to msg
                 msg += &format!("     + {}\n", markdown::italic(ingredient))
             }
-            if let Some(allergens) = sub_meal.allergens.as_ref() {
-                msg += &format!("    ⓘ {}\n", allergens)
+            if wants_allergens {
+                if let Some(allergens) = sub_meal.allergens.as_ref() {
+                    msg += &format!("    ⓘ {}\n", allergens)
+                }
             }
             // appending price
             if !price_is_shared {
@@ -140,8 +146,10 @@ fn mealgroups_to_msg(meal_groups: &[MealGroup]) -> String {
                 msg += &format!("   → {}\n", markdown::bold("Variationen:"));
                 for variation in variations {
                     msg += &format!("       • {}\n", markdown::italic(&variation.name));
-                    if let Some(allergens_and_add) = variation.allergens_and_add.as_ref() {
-                        msg += &format!("         ⓘ {}\n", allergens_and_add)
+                    if wants_allergens {
+                        if let Some(allergens_and_add) = variation.allergens_and_add.as_ref() {
+                            msg += &format!("         ⓘ {}\n", allergens_and_add)
+                        }
                     }
                 }
             }

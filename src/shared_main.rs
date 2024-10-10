@@ -65,6 +65,7 @@ pub fn make_mensa_keyboard(
 }
 
 pub fn make_commands_keyrow() -> KeyboardMarkup {
+    // let req = ButtonRequest::
     let keyboard = vec![
         vec![
             KeyboardButton::new("/heute"),
@@ -74,15 +75,25 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
         vec![
             KeyboardButton::new("/andere"),
             KeyboardButton::new("/mensa"),
+            KeyboardButton::new("/allergene"),
         ],
     ];
     KeyboardMarkup::new(keyboard).resize_keyboard()
 }
 
-pub async fn build_meal_message_dispatcher(days_forward: i64, mensa_location: u32) -> String {
+pub async fn build_meal_message_dispatcher(
+    chat_id: i64,
+    days_forward: i64,
+    mensa_location: u32,
+) -> String {
+    let wants_allergens = get_user_registration(chat_id)
+        .map(|reg| reg.allergens)
+        .unwrap_or_default();
     match BACKEND.get().unwrap() {
-        Backend::MensiMates => mm_build_meal_msg(days_forward, mensa_location).await,
-        Backend::StuWe => stuwe_build_meal_msg(days_forward, mensa_location).await,
+        Backend::MensiMates => {
+            mm_build_meal_msg(days_forward, mensa_location, wants_allergens).await
+        }
+        Backend::StuWe => stuwe_build_meal_msg(days_forward, mensa_location, wants_allergens).await,
     }
 }
 
@@ -113,7 +124,8 @@ pub async fn load_job(bot: Bot, sched: &JobScheduler, task: JobHandlerTask) -> O
             Box::pin(async move {
                 bot.send_message(
                     ChatId(task.chat_id.unwrap()),
-                    build_meal_message_dispatcher(0, task.mensa_id.unwrap()).await,
+                    build_meal_message_dispatcher(task.chat_id.unwrap(), 0, task.mensa_id.unwrap())
+                        .await,
                 )
                 .parse_mode(ParseMode::MarkdownV2)
                 .await
@@ -157,6 +169,7 @@ pub async fn callback_handler(
                     .unwrap();
 
                     let text = build_meal_message_dispatcher(
+                        chat.id.0,
                         0,
                         *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                     )
@@ -187,6 +200,7 @@ pub async fn callback_handler(
                     bot.send_message(
                         chat.id,
                         build_meal_message_dispatcher(
+                            chat.id.0,
                             0,
                             *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
                         )
@@ -196,28 +210,8 @@ pub async fn callback_handler(
                     .await?;
                 }
                 "m_regist" => {
-                    let subtext = "\n\nWenn /heute oder /morgen kein Wochentag ist, wird der Plan für Montag angezeigt.";
                     // replace mensa selection message with list of commands
-                    bot.edit_message_text(
-                        chat.id,
-                        id,
-                        Command::descriptions().to_string() + subtext,
-                    )
-                    .await?;
-
-                    bot
-                        .send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .reply_markup(make_commands_keyrow()).await?;
-
-                    let text = build_meal_message_dispatcher(
-                        0,
-                        *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
-                    )
-                    .await;
-
-                    bot.send_message(chat.id, text)
-                        .parse_mode(ParseMode::MarkdownV2)
+                    bot.edit_message_text(chat.id, id, Command::descriptions().to_string())
                         .await?;
 
                     let task = RegisterTask {
@@ -230,6 +224,22 @@ pub async fn callback_handler(
 
                     update_db_row(&task).unwrap();
                     jobhandler_task_tx.send(task).unwrap();
+
+                    bot
+                        .send_message(chat.id, format!("Plan der {} wird ab jetzt automatisch an Wochentagen *06:00 Uhr* gesendet\\.\n\nÄndern mit\n/mensa oder /uhrzeit", markdown::bold(arg)))
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .reply_markup(make_commands_keyrow()).await?;
+
+                    let text = build_meal_message_dispatcher(
+                        chat.id.0,
+                        0,
+                        *mensen.iter().find(|(_, v)| v.as_str() == arg).unwrap().0,
+                    )
+                    .await;
+
+                    bot.send_message(chat.id, text)
+                        .parse_mode(ParseMode::MarkdownV2)
+                        .await?;
                 }
                 "day" => {
                     if let Some(registration) = get_user_registration(chat.id.0) {
@@ -240,9 +250,12 @@ pub async fn callback_handler(
                         let day_str = ["Heute", "Morgen", "Übermorgen"]
                             [usize::try_from(days_forward).unwrap()];
 
-                        let text =
-                            build_meal_message_dispatcher(days_forward, registration.mensa_id)
-                                .await;
+                        let text = build_meal_message_dispatcher(
+                            chat.id.0,
+                            days_forward,
+                            registration.mensa_id,
+                        )
+                        .await;
                         log::debug!("Build {} msg: {:.2?}", day_str, now.elapsed());
                         let now = Instant::now();
 

@@ -43,7 +43,11 @@ async fn mm_get_meals_at_mensa_at_day(
     Ok(resp.json::<Vec<MensiMeal>>().await?)
 }
 
-pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String {
+pub async fn mm_build_meal_msg(
+    days_forward: i64,
+    mensa_location: u32,
+    wants_allergens: bool,
+) -> String {
     let mut msg: String = String::new();
 
     // get requested date
@@ -69,14 +73,13 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
     let day_meals = mm_get_meals_at_mensa_at_day(&requested_date, mensa_location).await;
 
     let now = Instant::now();
-    let german_date = german_date_fmt(requested_date.date_naive());
 
     // start message formatting
     let rand_emoji = EMOJIS[rand::thread_rng().gen_range(0..EMOJIS.len())];
     msg += &format!(
         "{} {} {}\n",
         rand_emoji,
-        markdown::italic(&german_date),
+        german_date_fmt(requested_date.date_naive()),
         rand_emoji,
     );
 
@@ -137,7 +140,7 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
                             }
                         }
 
-                        if meal.allergens != "N/A" {
+                        if wants_allergens && meal.allergens != "N/A" {
                             msg += &format!("    ⓘ {}\n", meal.allergens);
                         };
 

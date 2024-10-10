@@ -69,7 +69,8 @@ pub fn check_or_create_db_tables() -> rusqlite::Result<()> {
         chat_id integer not null unique primary key,
         mensa_id integer not null,
         hour integer,
-        minute integer
+        minute integer,
+        allergens BOOLEAN
         )",
     )?
     .execute([])?;
@@ -114,6 +115,30 @@ pub fn init_db_record(job_handler_task: &JobHandlerTask) -> rusqlite::Result<()>
         job_handler_task.hour.unwrap(),
         job_handler_task.minute.unwrap()
     ])?;
+
+    Ok(())
+}
+
+pub fn get_user_allergen_state(chat_id: i64) -> rusqlite::Result<bool> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
+
+    let mut stmt = conn.prepare_cached(
+        "select allergens from registrations
+        where chat_id = ?1",
+    )?;
+
+    let allergens: bool = stmt.query_row(params![chat_id], |row| row.get(0))?;
+
+    Ok(allergens)
+}
+
+pub fn set_user_allergen_state(chat_id: i64, state: bool) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
+
+    let mut stmt =
+        conn.prepare_cached("update registrations set allergens = ?2 where chat_id = ?1")?;
+
+    stmt.execute(params![chat_id, state])?;
 
     Ok(())
 }

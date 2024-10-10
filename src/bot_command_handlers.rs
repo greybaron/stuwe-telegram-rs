@@ -7,8 +7,10 @@ use crate::data_types::{
     UnregisterTask, UpdateRegistrationTask,
 };
 
+use crate::db_operations::set_user_allergen_state;
 use crate::shared_main::{
-    build_meal_message_dispatcher, get_user_registration, make_commands_keyrow, make_mensa_keyboard,
+    build_meal_message_dispatcher, get_user_registration, insert_user_registration,
+    make_commands_keyrow, make_mensa_keyboard,
 };
 use rand::Rng;
 use std::{collections::BTreeMap, time::Instant};
@@ -39,7 +41,8 @@ pub async fn day_cmd(bot: Bot, msg: Message, cmd: Command) -> HandlerResult {
     };
 
     if let Some(registration) = get_user_registration(msg.chat.id.0) {
-        let text = build_meal_message_dispatcher(days_forward, registration.mensa_id).await;
+        let text =
+            build_meal_message_dispatcher(msg.chat.id.0, days_forward, registration.mensa_id).await;
         let now = Instant::now();
 
         bot.send_message(msg.chat.id, text)
@@ -139,6 +142,30 @@ pub async fn unsubscribe(
 
 pub async fn change_mensa(bot: Bot, msg: Message, mensen: BTreeMap<u32, String>) -> HandlerResult {
     mensa_disp_or_upd(bot, msg, mensen, MensaKeyboardAction::Update).await
+}
+
+pub async fn allergene(bot: Bot, msg: Message) -> HandlerResult {
+    if let Some(mut registration) = get_user_registration(msg.chat.id.0) {
+        registration.allergens = !registration.allergens;
+
+        set_user_allergen_state(msg.chat.id.0, registration.allergens)?;
+        insert_user_registration(msg.chat.id.0, registration);
+
+        match registration.allergens {
+            true => {
+                bot.send_message(msg.chat.id, "✅ Allergene werden jetzt angezeigt.")
+                    .await?;
+            }
+            false => {
+                bot.send_message(msg.chat.id, "❌ Allergene werden nicht mehr angezeigt.")
+                    .await?;
+            }
+        }
+    } else {
+        bot.send_message(msg.chat.id, NO_DB_MSG).await?;
+    }
+
+    Ok(())
 }
 
 pub async fn start_time_dialogue(

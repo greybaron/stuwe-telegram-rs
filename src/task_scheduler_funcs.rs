@@ -24,7 +24,8 @@ use crate::{
         Backend, BroadcastUpdateTask, JobHandlerTask, RegistrationEntry, UpdateRegistrationTask,
     },
     db_operations::{
-        get_all_user_registrations_db, init_db_record, task_db_kill_auto, update_db_row,
+        get_all_user_registrations_db, get_user_allergen_state, init_db_record, task_db_kill_auto,
+        update_db_row,
     },
     shared_main::{get_user_registration, insert_user_registration, load_job},
 };
@@ -41,9 +42,8 @@ pub async fn handle_add_registration_task(
     );
     // create or update row in db
     init_db_record(&job_handler_task).unwrap();
-    if let Some(uuid) =
-        get_user_registration(job_handler_task.chat_id.unwrap()).and_then(|reg| reg.job_uuid)
-    {
+    let registration = get_user_registration(job_handler_task.chat_id.unwrap());
+    if let Some(uuid) = registration.and_then(|reg| reg.job_uuid) {
         sched.context.job_delete_tx.send(uuid).unwrap();
     }
 
@@ -58,6 +58,7 @@ pub async fn handle_add_registration_task(
             mensa_id: job_handler_task.mensa_id.unwrap(),
             hour: job_handler_task.hour,
             minute: job_handler_task.minute,
+            allergens: registration.map(|reg| reg.allergens).unwrap_or(true),
         },
     );
 }
@@ -117,6 +118,7 @@ pub async fn handle_update_registration_task(
                 mensa_id,
                 hour,
                 minute,
+                allergens: registration.allergens,
             },
         );
 
@@ -154,6 +156,7 @@ pub async fn handle_delete_registration_task(
             mensa_id: registration.mensa_id,
             hour: None,
             minute: None,
+            allergens: registration.allergens,
         },
     );
 
@@ -185,7 +188,7 @@ pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandle
             {
                 log::info!("Sent update to {}", chat_id);
 
-                let text = stuwe_build_diff_msg(&diff).await;
+                let text = stuwe_build_diff_msg(&diff, registration_data.allergens).await;
 
                 bot.send_message(ChatId(chat_id), text)
                     .parse_mode(ParseMode::MarkdownV2)
@@ -315,6 +318,8 @@ pub async fn load_jobs_from_db(
                 mensa_id: task.mensa_id.unwrap(),
                 hour: task.hour,
                 minute: task.minute,
+                // hack job
+                allergens: get_user_allergen_state(task.chat_id.unwrap()).unwrap(),
             },
         );
     }

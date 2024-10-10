@@ -24,18 +24,20 @@ pub enum Command {
     Heute,
     #[command(description = "Gerichte für morgen\n")]
     Morgen,
-    #[command(description = "Andere Mensa abrufen\n")]
-    Andere,
     #[command(hide)]
     Übermorgen,
-    #[command(description = "automat. Nachrichten AN")]
+    #[command(description = "Andere Mensa anzeigen")]
+    Mensa,
+    #[command(description = "Mensa wechseln\n")]
+    Andere,
+    #[command(description = "autom. Nachrichten aktivieren")]
     Subscribe,
-    #[command(description = "autom. Nachrichten AUS")]
+    #[command(description = "autom. Nachrichten deaktivieren")]
     Unsubscribe,
-    #[command(hide)]
+    #[command(description = "Sendezeitpunkt ändern")]
     Uhrzeit,
     #[command(hide)]
-    Mensa,
+    Allergene,
     #[command(hide)]
     Start,
 }
@@ -157,6 +159,7 @@ pub struct RegistrationEntry {
     pub mensa_id: u32,
     pub hour: Option<u32>,
     pub minute: Option<u32>,
+    pub allergens: bool,
 }
 
 #[derive(Error, Debug, Clone)]
