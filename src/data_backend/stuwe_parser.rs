@@ -74,7 +74,6 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
             "\nNeue Gerichte:"
         }));
         msg += &mealgroups_to_msg(new_meals);
-        msg += "\n";
     }
     if let Some(modified_meals) = diff.modified_meals.as_ref() {
         msg += &markdown::bold(&markdown::underline(if modified_meals.len() == 1 {
@@ -83,7 +82,6 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
             "\nGeänderte Gerichte:"
         }));
         msg += &mealgroups_to_msg(modified_meals);
-        msg += "\n";
     }
 
     if let Some(removed_meals) = diff.removed_meals.as_ref() {
@@ -94,7 +92,7 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff) -> String {
         }));
         for rem_meal in removed_meals {
             for sub_meal in &rem_meal.sub_meals {
-                msg += &format!(" • {}\n", markdown::underline(&sub_meal.name));
+                msg += &format!("\n • {}", markdown::underline(&sub_meal.name));
             }
         }
     }
