@@ -8,7 +8,7 @@ pub struct GetMensasMensa {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct MensiMeal {
-    // allergens: String,
+    pub allergens: String,
     pub category: String,
     pub description: String,
     // id: i64,

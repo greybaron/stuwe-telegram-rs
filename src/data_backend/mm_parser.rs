@@ -89,7 +89,6 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
 
     match day_meals {
         Ok(meals) => {
-            println!("{:#?}", &meals);
             if meals.is_empty() {
                 msg += &markdown::bold("\nkeine Daten vorhanden.\n");
             } else {
@@ -107,7 +106,11 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
                 for meal_group in structured_day_meals {
                     // Bold type of meal (-group)
                     let title = meal_group.0;
-                    msg += &format!("\n{}\n", markdown::bold(&title));
+                    msg += &format!(
+                        "\n{} {}\n",
+                        get_mealgroup_icon(&title),
+                        markdown::bold(&title)
+                    );
 
                     let meals_in_group = meal_group.1;
                     if meals_in_group.is_empty() {
@@ -133,8 +136,13 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
                                 msg += &format!("     + {}\n", markdown::italic(ingr));
                             }
                         }
+
+                        if meal.allergens != "N/A" {
+                            msg += &format!("    ⓘ {}\n", meal.allergens);
+                        };
+
                         if !price_is_shared {
-                            msg += &format!("  {}\n", &meal.price);
+                            msg += &format!("   {}\n", &meal.price);
                         }
 
                         if meal.votes != 0 {
@@ -147,7 +155,7 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
                     }
 
                     if price_is_shared {
-                        msg += &format!("   {}\n", price_first_meal);
+                        msg += &format!("  {}\n", price_first_meal);
                     }
                 }
             }
@@ -162,6 +170,21 @@ pub async fn mm_build_meal_msg(days_forward: i64, mensa_location: u32) -> String
     log::info!("MensiMates build msg: {:.2?}", now.elapsed());
 
     msg
+}
+
+fn get_mealgroup_icon(meal_name: &str) -> &'static str {
+    match meal_name.to_lowercase().as_str() {
+        s if s.contains("vegan") => "🌱",
+        s if s.contains("vegetarisch") => "🧀",
+        s if s.contains("fleisch") => "🍗",
+        s if s.contains("grill") => "🍔",
+        s if s.contains("fisch") => "🐟",
+        s if s.contains("pastateller") => "🍝",
+        s if s.contains("gemüse") => "🥕",
+        s if s.contains("sättigung") => "➕",
+        s if s.contains("schneller teller") => "♿️",
+        _ => "🍽️",
+    }
 }
 
 pub fn float_rating_to_stars(rating: f32) -> String {
