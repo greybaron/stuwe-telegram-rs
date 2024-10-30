@@ -3,7 +3,7 @@ use chrono::Timelike;
 use futures_util::TryStreamExt;
 use reqwest::Client;
 use reqwest_websocket::{Message, RequestBuilderExt};
-use std::{collections::BTreeMap, time::Duration};
+use std::{collections::BTreeMap, env, time::Duration};
 use teloxide::{
     payloads::SendMessageSetters,
     requests::Requester,
@@ -186,6 +186,31 @@ pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandle
                         // only send updates after job message has been sent: job hour has to be earlier OR same hour, earlier minute
                         && (job_hour < now.hour() || job_hour == now.hour() && job_minute <= now.minute())
             {
+                if env::var_os("ALLERGEN_DBG").is_some() && canteen_id == 118 {
+                    let len_all = diff.modified_meals.as_ref().map(|t| t.len()).unwrap_or(0);
+                    let len_non_alg = diff
+                        .modified_meals_ignoring_allergens
+                        .as_ref()
+                        .map(|t| t.len())
+                        .unwrap_or(0);
+                    println!("ALL upd len: {}\nnon-ALG upd len: {}", len_all, len_non_alg);
+                    if let Some(all) = &diff.modified_meals {
+                        println!("ALL: {:#?}", all);
+                    }
+                    if let Some(non_alg) = &diff.modified_meals_ignoring_allergens {
+                        println!("non-ALG: {:#?}", non_alg);
+                    }
+                }
+
+                // user doesnt display allergens, but only only diff is allergens -> skip
+                if !registration_data.allergens
+                    && diff.new_meals.is_none()
+                    && diff.removed_meals.is_none()
+                    && diff.modified_meals_ignoring_allergens.is_none()
+                {
+                    continue;
+                }
+
                 log::info!("Sent update to {}", chat_id);
 
                 let text = stuwe_build_diff_msg(&diff, registration_data.allergens).await;

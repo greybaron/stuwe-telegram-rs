@@ -79,7 +79,13 @@ pub async fn stuwe_build_diff_msg(diff: &CanteenMealDiff, wants_allergens: bool)
         }));
         msg += &mealgroups_to_msg(new_meals, wants_allergens);
     }
-    if let Some(modified_meals) = diff.modified_meals.as_ref() {
+
+    let use_modified = match wants_allergens {
+        true => &diff.modified_meals,
+        false => &diff.modified_meals_ignoring_allergens,
+    };
+
+    if let Some(modified_meals) = use_modified {
         msg += &markdown::bold(&markdown::underline(if modified_meals.len() == 1 {
             "\nGeändertes Gericht:"
         } else {

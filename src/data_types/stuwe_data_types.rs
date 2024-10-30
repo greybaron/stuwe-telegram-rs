@@ -17,6 +17,7 @@ pub struct CanteenMealDiff {
     pub canteen_id: u32,
     pub new_meals: Option<Vec<MealGroup>>,
     pub modified_meals: Option<Vec<MealGroup>>,
+    pub modified_meals_ignoring_allergens: Option<Vec<MealGroup>>,
     pub removed_meals: Option<Vec<MealGroup>>,
 }
 
