@@ -3,8 +3,8 @@
 use stuwe_telegram_rs::data_types::CampusDualData;
 
 use stuwe_telegram_rs::bot_command_handlers::{
-    allergene, change_mensa, day_cmd, invalid_cmd, reply_time_dialogue, show_different_mensa,
-    start, start_time_dialogue, subscribe, unsubscribe,
+    allergene, change_mensa, day_cmd, invalid_cmd, reply_time_dialogue, senddiff,
+    show_different_mensa, start, start_time_dialogue, subscribe, unsubscribe,
 };
 use stuwe_telegram_rs::constants::{
     API_URL, BACKEND, CD_DATA, DB_FILENAME, OLLAMA_HOST, OLLAMA_MODEL, STUWE_DB, USER_REGISTRATIONS,
@@ -146,6 +146,7 @@ fn schema() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>>
         .branch(dptree::case![Command::Unsubscribe].endpoint(unsubscribe))
         .branch(dptree::case![Command::Mensa].endpoint(change_mensa))
         .branch(dptree::case![Command::Allergene].endpoint(allergene))
+        .branch(dptree::case![Command::Diff].endpoint(senddiff))
         .branch(dptree::case![Command::Uhrzeit].endpoint(start_time_dialogue));
 
     let message_handler = Update::filter_message()

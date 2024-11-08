@@ -68,12 +68,13 @@ pub fn make_commands_keyrow() -> KeyboardMarkup {
         vec![
             KeyboardButton::new("/heute"),
             KeyboardButton::new("/morgen"),
-            KeyboardButton::new("/übermorgen"),
+            KeyboardButton::new("/andere"),
+            // KeyboardButton::new("/übermorgen"),
         ],
         vec![
-            KeyboardButton::new("/andere"),
             KeyboardButton::new("/mensa"),
             KeyboardButton::new("/allergene"),
+            KeyboardButton::new("/diff"),
         ],
     ];
     KeyboardMarkup::new(keyboard).resize_keyboard()

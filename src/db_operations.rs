@@ -70,7 +70,8 @@ pub fn check_or_create_db_tables() -> rusqlite::Result<()> {
         mensa_id integer not null,
         hour integer,
         minute integer,
-        allergens BOOLEAN
+        allergens BOOLEAN DEFAULT 1,
+        senddiff BOOLEAN DEFAULT 1
         )",
     )?
     .execute([])?;
@@ -137,6 +138,30 @@ pub fn set_user_allergen_state(chat_id: i64, state: bool) -> rusqlite::Result<()
 
     let mut stmt =
         conn.prepare_cached("update registrations set allergens = ?2 where chat_id = ?1")?;
+
+    stmt.execute(params![chat_id, state])?;
+
+    Ok(())
+}
+
+pub fn get_user_senddiff_state(chat_id: i64) -> rusqlite::Result<bool> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
+
+    let mut stmt = conn.prepare_cached(
+        "select senddiff from registrations
+        where chat_id = ?1",
+    )?;
+
+    let diff: bool = stmt.query_row(params![chat_id], |row| row.get(0))?;
+
+    Ok(diff)
+}
+
+pub fn set_user_senddiff_state(chat_id: i64, state: bool) -> rusqlite::Result<()> {
+    let conn = Connection::open(DB_FILENAME.get().unwrap()).unwrap();
+
+    let mut stmt =
+        conn.prepare_cached("update registrations set senddiff = ?2 where chat_id = ?1")?;
 
     stmt.execute(params![chat_id, state])?;
 

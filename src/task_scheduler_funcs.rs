@@ -19,13 +19,13 @@ use crate::{
         save_campusdual_grades, save_campusdual_signup_options,
     },
     constants::{API_URL, BACKEND, CD_DATA, NO_DB_MSG, USER_REGISTRATIONS},
-    data_backend::stuwe_parser::stuwe_build_diff_msg,
+    data_backend::stuwe_parser::{stuwe_build_diff_msg, stuwe_build_meal_msg},
     data_types::{
         Backend, BroadcastUpdateTask, JobHandlerTask, RegistrationEntry, UpdateRegistrationTask,
     },
     db_operations::{
-        get_all_user_registrations_db, get_user_allergen_state, init_db_record, task_db_kill_auto,
-        update_db_row,
+        get_all_user_registrations_db, get_user_allergen_state, get_user_senddiff_state,
+        init_db_record, task_db_kill_auto, update_db_row,
     },
     shared_main::{get_user_registration, insert_user_registration, load_job},
 };
@@ -59,6 +59,7 @@ pub async fn handle_add_registration_task(
             hour: job_handler_task.hour,
             minute: job_handler_task.minute,
             allergens: registration.map(|reg| reg.allergens).unwrap_or(true),
+            senddiff: registration.map(|reg| reg.senddiff).unwrap_or(true),
         },
     );
 }
@@ -119,6 +120,7 @@ pub async fn handle_update_registration_task(
                 hour,
                 minute,
                 allergens: registration.allergens,
+                senddiff: registration.senddiff,
             },
         );
 
@@ -157,6 +159,7 @@ pub async fn handle_delete_registration_task(
             hour: None,
             minute: None,
             allergens: registration.allergens,
+            senddiff: registration.senddiff,
         },
     );
 
@@ -213,7 +216,12 @@ pub async fn handle_broadcast_update_task(bot: &Bot, job_handler_task: JobHandle
 
                 log::info!("Sent update to {}", chat_id);
 
-                let text = stuwe_build_diff_msg(&diff, registration_data.allergens).await;
+                let text = match registration_data.senddiff {
+                    true => stuwe_build_diff_msg(&diff, registration_data.allergens).await,
+                    false => {
+                        stuwe_build_meal_msg(0, diff.canteen_id, registration_data.allergens).await
+                    }
+                };
 
                 bot.send_message(ChatId(chat_id), text)
                     .parse_mode(ParseMode::MarkdownV2)
@@ -345,6 +353,7 @@ pub async fn load_jobs_from_db(
                 minute: task.minute,
                 // hack job
                 allergens: get_user_allergen_state(task.chat_id.unwrap()).unwrap(),
+                senddiff: get_user_senddiff_state(task.chat_id.unwrap()).unwrap(),
             },
         );
     }

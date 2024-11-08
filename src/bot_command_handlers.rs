@@ -168,6 +168,36 @@ pub async fn allergene(bot: Bot, msg: Message) -> HandlerResult {
     Ok(())
 }
 
+pub async fn senddiff(bot: Bot, msg: Message) -> HandlerResult {
+    if let Some(mut registration) = get_user_registration(msg.chat.id.0) {
+        registration.senddiff = !registration.senddiff;
+
+        set_user_allergen_state(msg.chat.id.0, registration.senddiff)?;
+        insert_user_registration(msg.chat.id.0, registration);
+
+        match registration.senddiff {
+            true => {
+                bot.send_message(
+                    msg.chat.id,
+                    "✅ Nur Änderungen werden bei Planänderung gesendet.",
+                )
+                .await?;
+            }
+            false => {
+                bot.send_message(
+                    msg.chat.id,
+                    "❌ Gesamter Plan wird bei Änderungen gesendet.",
+                )
+                .await?;
+            }
+        }
+    } else {
+        bot.send_message(msg.chat.id, NO_DB_MSG).await?;
+    }
+
+    Ok(())
+}
+
 pub async fn start_time_dialogue(
     bot: Bot,
     msg: Message,

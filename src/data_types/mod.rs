@@ -38,6 +38,8 @@ pub enum Command {
     Uhrzeit,
     #[command(hide)]
     Allergene,
+    #[command(description = "Bei Planänderungen nur Unterschied schicken")]
+    Diff,
     #[command(hide)]
     Start,
 }
@@ -160,6 +162,7 @@ pub struct RegistrationEntry {
     pub hour: Option<u32>,
     pub minute: Option<u32>,
     pub allergens: bool,
+    pub senddiff: bool,
 }
 
 #[derive(Error, Debug, Clone)]
