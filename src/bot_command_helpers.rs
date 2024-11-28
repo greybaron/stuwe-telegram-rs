@@ -155,7 +155,8 @@ async fn ai_parse_time(txt: &str) -> Result<(u32, u32), TimeParseError> {
         .post(format!("{}/generate", ollama_host.as_ref().unwrap()))
         .body(params.to_string())
         .send()
-        .await;
+        .await
+        .and_then(|r| r.error_for_status());
 
     if let Ok(res) = res {
         let txt = res.text().await.unwrap();
